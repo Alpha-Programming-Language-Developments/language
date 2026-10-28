@@ -4,6 +4,10 @@
 "static" @keyword
 "nonstatic" @keyword
 "make" @keyword
+"schedule" @keyword
+"verify" @keyword
+"enum" @keyword
+"module" @keyword
 "check" @keyword.control
 "function" @keyword.function
 "var" @keyword
@@ -15,6 +19,7 @@
 "for" @keyword.control
 "each" @keyword.control
 "in" @keyword.control
+"count" @keyword.control
 "try" @keyword.control
 "catch" @keyword.control
 "system" @keyword.control
@@ -36,17 +41,21 @@
 (custom_type) @type
 (generic_type name: (_) @type)
 (structure_definition name: (identifier) @type)
+(enum_definition name: (identifier) @type)
+(module_definition name: (identifier) @type)
 
 ; Literals
 (string) @string
 (multiline_string) @string
 (interpolated_string) @string
 (interpolated_multiline_string) @string
+(hexcolor_literal) @string.special
 (char) @character
 (number) @number
 (boolean) @boolean
 (nothing) @constant.builtin
 (import_path) @string.special.path
+(enum_definition variant: (identifier) @constant)
 
 ; Functions & Methods
 (function_definition
@@ -68,6 +77,9 @@
 
 (variable_declaration
   name: (identifier) @variable)
+
+(tuple_pattern
+  (identifier) @variable)
 
 (structure_field
   name: (identifier) @property)
@@ -107,6 +119,8 @@
   "%"
   "++"
   "--"
+  "?"
+  "?:"
 ] @operator
 
 ; Delimiters & Punctuation
