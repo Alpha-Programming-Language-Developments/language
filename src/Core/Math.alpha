@@ -1,0 +1,35 @@
+// Core standard library module: Math
+// Provides basic mathematical helper functions written in Alpha.
+
+function min(a: int, b: int) [public, int] {
+    if a < b {
+        return a
+    } else {
+        return b
+    }
+}
+
+function max(a: int, b: int) [public, int] {
+    if a > b {
+        return a
+    } else {
+        return b
+    }
+}
+
+function abs(n: int) [public, int] {
+    if n < 0 {
+        return -n
+    } else {
+        return n
+    }
+}
+
+function sqr(n: int) [public, <int, nothing>] {
+    if n < 0 {
+        return nothing
+    }
+    else {
+        return n * n
+    }
+}

@@ -1,0 +1,33 @@
+import Core/Basic.alpha
+
+var players: vect<string> = vect.new()
+var scores: map<string, int> = map.new()
+
+function add_player(name: string) [public, nothing] {
+  players.push(name)
+  scores.insert(name, 0)
+}
+
+function get_score(name: string) [public, <int, nothing>] {
+  if scores.contains(name) {
+    return scores.get(name)
+  } else {
+    return nothing
+  }
+}
+
+function main() [public, nothing] {
+  add_player("Player1")
+  add_player("Player2")
+
+  print("List of players:")
+  for each player in players {
+    print(player)
+  }
+
+  var s1: <int, nothing> = get_score("Player1")
+  printf("Score of Player1: {}\n", s1)
+
+  var formatted_timer: string = format("{2}:{2}:{2}", 9, 5, 1)
+  printf("Formatted timer: {}\n", formatted_timer)
+}

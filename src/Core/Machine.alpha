@@ -1,0 +1,5 @@
+// Core standard library module: Machine
+// Provides system-level interaction, terminal/console execution, and cross-platform machine primitives.
+
+// console.out(command: string) -> string
+// Executes the given terminal shell command cross-platform and returns its terminal output.

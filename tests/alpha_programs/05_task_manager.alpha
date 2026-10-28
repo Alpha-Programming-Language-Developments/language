@@ -1,0 +1,71 @@
+// Example 5: Task Management & Priority Tracker in Alpha
+import Core/Basic.alpha
+
+var task_ids: vect<int> = vect.new()
+var task_names: map<int, string> = map.new()
+var task_priorities: map<int, int> = map.new()
+var task_done: map<int, boolean> = map.new()
+
+var next_id: int = 1
+
+function create_task(title: string, priority: int) [public, int] {
+    var id: int = next_id
+    next_id++
+
+    task_ids.push(id)
+    task_names.insert(id, title)
+    task_priorities.insert(id, priority)
+    task_done.insert(id, false)
+    return id
+}
+
+function complete_task(id: int) [public, nothing] {
+    if task_done.contains(id) {
+        task_done.insert(id, true)
+    }
+}
+
+function print_report() [public, nothing] {
+    print("---------------------------------------------------------")
+    print(" ID  | Status | Priority | Title")
+    print("---------------------------------------------------------")
+
+    var completed_count: int = 0
+
+    for each id in task_ids {
+        var name: <string, nothing> = task_names.get(id)
+        var prio: <int, nothing> = task_priorities.get(id)
+        var done: <boolean, nothing> = task_done.get(id)
+
+        var status_str: string = "[ ]"
+        if not done.nothing?() and done {
+            status_str = "[x]"
+            completed_count++
+        }
+
+        var formatted_id: string = format("{2}", id)
+        printf(" {}  |  {}   |    {}     | {}\n", formatted_id, status_str, prio, name)
+    }
+
+    print("---------------------------------------------------------")
+    var total: int = task_ids.len()
+    printf("Total: {} tasks | Completed: {} | Remaining: {}\n", total, completed_count, total - completed_count)
+    print("---------------------------------------------------------")
+}
+
+function main() [public, nothing] {
+    print("=== Alpha Task Manager ===")
+
+    create_task("Implement Alpha Parser", 1)
+    create_task("Build Type Checker", 2)
+    create_task("Add Error Diagnostics", 1)
+    create_task("Write Documentation", 3)
+    create_task("Deploy Release Binary", 2)
+
+    // Complete some tasks
+    complete_task(1)
+    complete_task(2)
+    complete_task(3)
+
+    print_report()
+}

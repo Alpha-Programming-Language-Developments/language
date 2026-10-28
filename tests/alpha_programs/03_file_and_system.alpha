@@ -1,0 +1,56 @@
+// Example 3: File I/O, Directory Operations, and System Environment in Alpha
+import Core/Basic.alpha
+import Core/Io.alpha
+import Core/Fs.alpha
+import Core/Env.alpha
+
+function main() [public, nothing] {
+    print("=== File System and Logging Demo ===")
+
+    printf("Current working directory: {}\n", env.current)
+
+    // Open target directory
+    var temp_dir: string = "temp_alpha_audit"
+    var d: Fs.Dir = dir.open(temp_dir)
+    d.create(".")
+
+    printf("Created test directory: {}\n", temp_dir)
+
+    // Create a log file inside directory
+    var log_name: string = "audit.log"
+    d.file.create(log_name)
+
+    var log_path: string = format("{}/{}", temp_dir, log_name)
+    var file: Io.File = Io.open(log_path)
+
+    // Clear file before writing
+    file.reset()
+
+    // Write log entries formatted with timestamps
+    var log1: string = format("[{2}:{2}:{2}] System initialization started\n", 8, 30, 0)
+    var log2: string = format("[{2}:{2}:{2}] Core modules verified successfully\n", 8, 30, 15)
+    var log3: string = format("[{2}:{2}:{2}] All services online and running\n", 8, 30, 45)
+
+    file.write(log1)
+    file.write(log2)
+    file.write(log3)
+
+    printf("\nFile status for '{}':\n", log_path)
+    printf(" - Exists?    : {}\n", file.something?())
+    printf(" - Empty?     : {}\n", file.empty?())
+    printf(" - Line count : {}\n", file.linelen())
+    printf(" - Byte count : {}\n", file.bytelen())
+    printf(" - Char count : {}\n", file.symlen())
+
+    print("\nReading file content:")
+    var content: string = file.content()
+    print(content)
+
+    // Inspect directory contents
+    var children: vect<string> = d.get_children(".")
+    printf("Directory '{}' contains {} children.\n", temp_dir, children.len())
+
+    // Clean up
+    d.delete(".")
+    printf("Cleaned up directory '{}'. Exists now: {}\n", temp_dir, not d.nothing?("."))
+}

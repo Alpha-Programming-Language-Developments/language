@@ -1,0 +1,70 @@
+// Example 1: Mathematics, Prime checking, and Fibonacci Sequence in Alpha
+import Core/Basic.alpha
+import Core/Math.alpha
+
+// Checks if a given number is prime using trial division
+function is_prime?(n: int) [public, boolean] {
+    if n <= 1 {
+        return false
+    }
+    if n <= 3 {
+        return true
+    }
+    if n % 2 == 0 {
+        return false
+    }
+
+    // Check odd divisors up to n / 2
+    for d = 3, d * d <= n, d = d + 2 {
+        if n % d == 0 {
+            return false
+        }
+    }
+    return true
+}
+
+// Calculates the n-th Fibonacci number iteratively
+function fibonacci(n: int) [public, int] {
+    if n <= 0 {
+        return 0
+    }
+    if n == 1 {
+        return 1
+    }
+
+    var a: int = 0
+    var b: int = 1
+    for i = 2, i <= n, i++ {
+        var temp: int = a + b
+        a = b
+        b = temp
+    }
+    return b
+}
+
+function main() [public, nothing] {
+    print("=== Mathematics & Prime Numbers in Alpha ===")
+
+    print("\nFibonacci Sequence (first 10 numbers):")
+    for i = 0, i < 10, i++ {
+        var fib_val: int = fibonacci(i)
+        var formatted_idx: string = format("{2}", i)
+        printf("Fib[{}] = {}\n", formatted_idx, fib_val)
+    }
+
+    print("\nPrime Numbers check from 1 to 20:")
+    var prime_count: int = 0
+    for num = 1, num <= 20, num++ {
+        var is_prime_val: boolean = is_prime?(num)
+        if is_prime_val {
+            printf("{} is PRIME\n", num)
+            prime_count++
+        }
+    }
+    printf("Total primes found: {}\n", prime_count)
+
+    // Using Core/Math.alpha module
+    var v1: int = -100
+    var v2: int = 45
+    printf("\nCore/Math: abs({}) = {}, max({}, {}) = {}\n", v1, abs(v1), v1, v2, max(v1, v2))
+}

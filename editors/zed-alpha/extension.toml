@@ -1,0 +1,11 @@
+id = "alpha"
+name = "Alpha"
+version = "0.1.0"
+schema_version = 1
+authors = ["Alpha Team"]
+description = "Syntax highlighting and language support for the Alpha programming language"
+repository = "https://github.com/alpha-lang/alpha"
+
+[grammars.alpha]
+repository = "file:///D:/RustProjects/alpha-lang/editors/zed-alpha/tree-sitter-alpha"
+rev = "31d5a1a031e4f9b947ee0f46fcd6a3b5a98edaaf"

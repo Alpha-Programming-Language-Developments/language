@@ -1,0 +1,60 @@
+// Example 4: Error Handling and Resilience with try/catch in Alpha
+import Core/Basic.alpha
+
+// Performs division with error protection
+function divide_safe(numerator: int, denominator: int) [public, int] {
+    if denominator == 0 {
+        error("Cannot divide {} by zero!", numerator)
+    }
+    return numerator / denominator
+}
+
+function parse_user_age(age_str: string, age_val: int) [public, int] {
+    if age_val < 0 {
+        error("Age cannot be negative: {}", age_val)
+    }
+    if age_val > 150 {
+        error("Age exceeds biological maximum: {}", age_val)
+    }
+    return age_val
+}
+
+function main() [public, nothing] {
+    print("=== Error Handling and try/catch Demo ===")
+
+    // Scenario 1: Catching division error
+    print("\n[Scenario 1] Safe Division:")
+    var nums: vect<int> = vect.new()
+    nums.push(10)
+    nums.push(5)
+    nums.push(0)
+    nums.push(2)
+
+    for each n in nums {
+        try {
+            var result: int = divide_safe(100, n)
+            printf("100 / {} = {}\n", n, result)
+        } catch err {
+            printf("[Caught Error] {}\n", err)
+        }
+    }
+
+    // Scenario 2: Catching validation errors
+    print("\n[Scenario 2] Validating User Input:")
+    var test_ages: vect<int> = vect.new()
+    test_ages.push(25)
+    test_ages.push(-5)
+    test_ages.push(180)
+    test_ages.push(30)
+
+    for each age in test_ages {
+        try {
+            var valid_age: int = parse_user_age("User", age)
+            printf("Validation successful: age is {}\n", valid_age)
+        } catch err {
+            printf("[Validation Rejected] {}\n", err)
+        }
+    }
+
+    print("\nProgram continued running smoothly after handling all errors!")
+}

@@ -1,0 +1,71 @@
+// Example 2: RPG Player Inventory and Shop System in Alpha
+import Core/Basic.alpha
+
+const var MAX_SLOTS: int = 10
+
+var backpack: vect<string> = vect.new()
+var quantities: map<string, int> = map.new()
+var shop_prices: map<string, int> = map.new()
+
+// Adds an item to inventory or increases its count
+function add_item(name: string, count: int) [public, nothing] {
+    if quantities.contains(name) {
+        var current: <int, nothing> = quantities.get(name)
+        if not current.nothing?() {
+            quantities.insert(name, current + count)
+        }
+    } else {
+        backpack.push(name)
+        quantities.insert(name, count)
+    }
+}
+
+// Looks up the price of an item in the shop
+function query_price(name: string) [public, <int, nothing>] {
+    if shop_prices.contains(name) {
+        return shop_prices.get(name)
+    } else {
+        return nothing
+    }
+}
+
+function main() [public, nothing] {
+    print("=== RPG Inventory & Shop System ===")
+
+    // Setup shop prices
+    shop_prices.insert("Iron Sword", 150)
+    shop_prices.insert("Health Potion", 25)
+    shop_prices.insert("Magic Shield", 300)
+    shop_prices.insert("Golden Apple", 500)
+
+    // Player collects loot
+    add_item("Iron Sword", 1)
+    add_item("Health Potion", 3)
+    add_item("Health Potion", 2) // adds to existing count
+    add_item("Magic Shield", 1)
+
+    print("\nBackpack Contents:")
+    for each item in backpack {
+        var qty: <int, nothing> = quantities.get(item)
+        printf(" - {} x{}\n", item, qty)
+    }
+
+    print("\nPrice Check at Merchant:")
+    var item_to_buy: string = "Golden Apple"
+    var price: <int, nothing> = query_price(item_to_buy)
+
+    if price.nothing?() {
+        printf("Sorry, '{}' is not available in the shop.\n", item_to_buy)
+    } else {
+        printf("The price of '{}' is {} gold coins.\n", item_to_buy, price)
+    }
+
+    // Check unknown item
+    var unknown_item: string = "Dragon Egg"
+    var missing_price: <int, nothing> = query_price(unknown_item)
+    if missing_price.nothing?() {
+        printf("Item '{}' not found in merchant catalog (price is nothing).\n", unknown_item)
+    }
+
+    printf("\nTotal unique backpack items: {} / {}\n", backpack.len(), MAX_SLOTS)
+}

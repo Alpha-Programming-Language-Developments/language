@@ -1,0 +1,15 @@
+import Core/Basic.alpha
+import Core/Math.alpha
+
+function main() [public, nothing] {
+    var a: int = -42
+    var b: int = 15
+
+    var absolute_a: int = abs(a)
+    var minimum: int = min(absolute_a, b)
+    var maximum: int = max(absolute_a, b)
+
+    printf("abs({}) = {}\n", a, absolute_a)
+    printf("min({}, {}) = {}\n", absolute_a, b, minimum)
+    printf("max({}, {}) = {}\n", absolute_a, b, maximum)
+}

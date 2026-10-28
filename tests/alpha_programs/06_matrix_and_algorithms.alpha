@@ -1,0 +1,67 @@
+// Example 6: Sorting and Array Algorithms in Alpha
+import Core/Basic.alpha
+
+// Performs Bubble Sort on a vector of integers
+function bubble_sort(arr: vect<int>) [public, nothing] {
+    var n: int = arr.len()
+    for i = 0, i < n, i++ {
+        for j = 0, j < n - i - 1, j++ {
+            var curr: int = arr[j]
+            var next: int = arr[j + 1]
+            if curr > next {
+                // Swap elements
+                arr[j] = next
+                arr[j + 1] = curr
+            }
+        }
+    }
+}
+
+function print_array(label: string, arr: vect<int>) [public, nothing] {
+    printf("{}: [", label)
+    for i = 0, i < arr.len(), i++ {
+        if i > 0 {
+            printf(", ")
+        }
+        printf("{}", arr[i])
+    }
+    print("]")
+}
+
+function calculate_sum(arr: vect<int>) [public, int] {
+    var total: int = 0
+    for each val in arr {
+        total = total + val
+    }
+    return total
+}
+
+function main() [public, nothing] {
+    print("=== Sorting & Vector Algorithms in Alpha ===")
+
+    var numbers: vect<int> = vect.new()
+    numbers.push(64)
+    numbers.push(34)
+    numbers.push(25)
+    numbers.push(12)
+    numbers.push(22)
+    numbers.push(11)
+    numbers.push(90)
+
+    print_array("Original Array", numbers)
+
+    var sum: int = calculate_sum(numbers)
+    printf("Sum of elements: {}\n", sum)
+
+    bubble_sort(numbers)
+    print_array("Sorted Array  ", numbers)
+
+    // Verify sort order
+    var is_sorted: boolean = true
+    for i = 0, i < numbers.len() - 1, i++ {
+        if numbers[i] > numbers[i + 1] {
+            is_sorted = false
+        }
+    }
+    printf("Is array correctly sorted? {}\n", is_sorted)
+}

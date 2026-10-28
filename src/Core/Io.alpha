@@ -1,0 +1,24 @@
+// Core standard library module: Io
+// Provides file I/O operations and File handle methods.
+
+// Static Io namespace:
+// Io.open(path)                  - Opens a file handle of type Io.File.
+// Io.read(path)                  - Reads the entire file content as string.
+// Io.write(path, content)        - Writes string content to file (creates or overwrites).
+// Io.copy(from, to)              - Copies a file to destination path.
+// Io.move(from, to)              - Moves/renames a file to destination path.
+// Io.delete(path)                - Deletes the file.
+// Io.size(path)                  - Returns file size in bytes.
+// Io.exists?(path)               - Checks if the file exists.
+// Io.file?(path)                 - Checks if the path is a file.
+
+// Io.File instance methods:
+// file.content()                 - Reads the entire file content as string.
+// file.write(text)               - Appends text to the file.
+// file.reset()                   - Clears file content.
+// file.delete()                  - Deletes the file.
+// file.exists?()                 - Checks whether the file exists.
+// file.empty?()                  - Checks whether the file is empty.
+// file.size() / file.bytelen()   - Returns byte size of the file.
+// file.linelen()                 - Returns line count.
+// file.symlen()                  - Returns character count.

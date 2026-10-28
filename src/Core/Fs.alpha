@@ -1,0 +1,29 @@
+// Core standard library module: Fs
+// Provides path inspection, directory navigation, and directory manipulation utilities.
+// File operations are handled in Core/Io.alpha.
+
+// Static Fs namespace:
+// Fs.exists?(path)               - Checks if path (file or directory) exists.
+// Fs.file?(path)                 - Checks if path is a file.
+// Fs.dir?(path)                  - Checks if path is a directory.
+// Fs.open(path)                  - Opens directory handle of type Fs.Dir.
+// Fs.join(p1, p2, ...)           - Joins path components into a normalized path.
+// Fs.extension(path) / Fs.ext    - Returns file extension without dot.
+// Fs.filename(path) / Fs.name    - Returns file name with extension.
+// Fs.stem(path)                  - Returns file name without extension.
+// Fs.parent(path)                - Returns parent directory path.
+// Fs.abs(path) / Fs.absolute     - Returns absolute path.
+
+// Fs.Dir instance methods (also via dir.open(path)):
+// dir.exists?(name)              - Checks if child item exists in this directory.
+// dir.create(name)               - Creates child subdirectory.
+// dir.delete(target)             - Deletes child item or directory itself.
+// dir.rename(new_name, target)   - Renames target within directory.
+// dir.reset()                    - Clears all directory contents.
+// dir.empty?()                   - Checks if directory is empty.
+// dir.nothing?()                 - Checks if directory does NOT exist.
+// dir.files()                    - Returns vect<string> of file paths.
+// dir.dirs()                     - Returns vect<string> of directory paths.
+// dir.walk()                     - Returns vect<string> of all recursive descendants.
+// dir.get_children()             - Returns vect<string> of direct child paths.
+// dir.join(subpath)              - Joins subpath to directory path.

@@ -1,0 +1,7 @@
+// Core standard library module: Basic
+// Provides core printing, formatted output, and error handling primitives.
+
+// print()   - Outputs any type except nothing to stdout.
+// printf()  - Outputs formatted text with {} placeholders.
+// format()  - Formats data into a string with optional padding (e.g. {2}).
+// error()   - Formats and displays an error, immediately halting execution.
