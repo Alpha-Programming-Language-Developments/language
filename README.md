@@ -7,7 +7,7 @@
 **A modern, statically-typed, expressive language with intuitive 1-based indexing, powerful package management, and first-class developer ergonomics.**
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)](Cargo.toml)
-[![Build & Tests](https://img.shields.io/badge/tests-43%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
+[![Build & Tests](https://img.shields.io/badge/tests-52%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20POSIX-orange.svg?style=for-the-badge)](#)
 
@@ -92,7 +92,7 @@ alpha -v
 ### 3. Run the Test Suite
 ```bash
 cargo test
-# Runs all 43 automated integration tests across the parser, typechecker, and runtime.
+# Runs all 52 automated integration tests across the parser, typechecker, and runtime.
 ```
 
 ---

@@ -40,6 +40,7 @@ pub enum TokenKind {
     System,
     Enum,
     Module,
+    AtStrict,
 
     // Literals
     IntLit(i64),
@@ -56,6 +57,7 @@ pub enum TokenKind {
 
     // Builtin Type Identifiers
     TypeInt,
+    TypeUnt,
     TypeFloat,
     TypeString,
     TypeChar,
@@ -167,6 +169,7 @@ impl fmt::Display for TokenKind {
             TokenKind::System => write!(f, "system"),
             TokenKind::Enum => write!(f, "enum"),
             TokenKind::Module => write!(f, "module"),
+            TokenKind::AtStrict => write!(f, "@strict"),
             TokenKind::IntLit(n) => write!(f, "{}", n),
             TokenKind::FloatLit(n) => write!(f, "{}", n),
             TokenKind::HexColorLit(h) => write!(f, "#({})", h),
@@ -179,6 +182,7 @@ impl fmt::Display for TokenKind {
             TokenKind::False => write!(f, "false"),
             TokenKind::Nothing => write!(f, "nothing"),
             TokenKind::TypeInt => write!(f, "int"),
+            TokenKind::TypeUnt => write!(f, "unt"),
             TokenKind::TypeFloat => write!(f, "float"),
             TokenKind::TypeString => write!(f, "string"),
             TokenKind::TypeChar => write!(f, "char"),

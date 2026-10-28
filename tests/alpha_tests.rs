@@ -1486,3 +1486,209 @@ function main() [public, nothing] {}
     let err = parser.parse_program().unwrap_err();
     assert!(err.to_string().contains("packages.alpaks"));
 }
+
+#[test]
+fn test_repeat_range_loop_without_variable() {
+    let source = r#"
+var counter: int = 0
+for 1...3 {
+    counter = counter + 1
+}
+
+var non_inc: int = 0
+for 1..3 {
+    non_inc = non_inc + 1
+}
+
+function main() [public, boolean] {
+    return counter == 3 && non_inc == 2
+}
+"#;
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_time_benchmark() {
+    let source = r#"
+import Core/Time.alpha
+
+function main() [public, boolean] {
+    var count: int = 0
+    var ms: int = time.benchmark({
+        time.sleep(20)
+        count = count + 10
+    })
+
+    var ms_capital: int = Time.benchmark({
+        time.sleep(15)
+        count = count + 5
+    })
+
+    var ms_global: int = benchmark({
+        time.sleep(10)
+        count = count + 1
+    })
+
+    return ms >= 15 && ms_capital >= 10 && ms_global >= 5 && count == 16
+}
+"#;
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+
+#[test]
+fn test_unt_type_and_operations() {
+    let source = r#"
+function main() [public, boolean] {
+    var a: unt = 100
+    var b: unt = 25
+    var sum: unt = a + b
+    var diff: unt = a - b
+    var prod: unt = a * 2
+    var quot: unt = a / b
+    var rem: unt = a % 30
+
+    var is_greater: boolean = a > b
+    var is_equal: boolean = (quot == 4)
+
+    return sum == 125 && diff == 75 && prod == 200 && quot == 4 && rem == 10 && is_greater && is_equal
+}
+"#;
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_unt_negative_assignment_fails() {
+    let source = r#"
+function main() [public, nothing] {
+    var a: unt = -5
+}
+"#;
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None);
+    assert!(res.is_err());
+    let err_msg = res.unwrap_err().message;
+    assert!(err_msg.contains("Cannot assign negative value") || err_msg.contains("unt"));
+}
+
+#[test]
+fn test_strict_mode_valid_program() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+@strict
+
+function safe_divide(a: int, b: int) [public, int] {
+    if b == 0 {
+        return 0
+    }
+    return a / b
+}
+
+function main() [public, boolean] {
+    var a: int = 10
+    var b: int = 2
+    var res: int = safe_divide(a, b)
+    var success: boolean = check res {
+        (5) => true,
+        else => false
+    }
+    return success
+}
+"#;
+
+    let errors = validate_alpha_code(source);
+    assert!(errors.is_empty(), "Expected no validation errors, got: {:?}", errors);
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_strict_mode_forbids_force_unwrap() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+@strict
+
+function main() [public, int] {
+    var res: <int, string> = 42
+    var val: int = res!?
+    return val
+}
+"#;
+
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected strict mode error for force unwrap");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("Force unwrap"));
+}
+
+#[test]
+fn test_strict_mode_forbids_untyped_variable() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+@strict
+
+function main() [public, int] {
+    var x = 10
+    return x
+}
+"#;
+
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected strict mode error for untyped variable");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("explicit type annotation"));
+}
+
+#[test]
+fn test_strict_mode_forbids_something_and_nothing() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+@strict
+
+function main() [public, int] {
+    var x: something = 10
+    return 0
+}
+"#;
+
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected strict mode error for 'something'");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("forbidden"));
+}
+
+#[test]
+fn test_alpha_lsp_validation() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    // 1. Valid code
+    let valid_code = "var x: int = 10
+var y: unt = 20";
+    let errors = validate_alpha_code(valid_code);
+    assert!(errors.is_empty());
+
+    // 2. Syntax error
+    let invalid_code = "var x: int = ";
+    let errors = validate_alpha_code(invalid_code);
+    assert!(!errors.is_empty());
+
+    // 3. Strict mode violation
+    let strict_violation = "@strict
+var x = 10";
+    let errors = validate_alpha_code(strict_violation);
+    assert!(!errors.is_empty());
+    assert!(errors[0].message.contains("[Strict Mode]"));
+}

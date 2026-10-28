@@ -6,6 +6,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
+    Unt,
     Float,
     String,
     Char,
@@ -24,6 +25,10 @@ impl Type {
     /// Check whether a source type can be assigned to or matches a target type.
     pub fn is_assignable_to(&self, target: &Type) -> bool {
         if self == target {
+            return true;
+        }
+
+        if *self == Type::Int && *target == Type::Unt {
             return true;
         }
 
@@ -97,6 +102,7 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Int => write!(f, "int"),
+            Type::Unt => write!(f, "unt"),
             Type::Float => write!(f, "float"),
             Type::String => write!(f, "string"),
             Type::Char => write!(f, "char"),

@@ -40,6 +40,7 @@ pub struct TypeChecker {
     current_file: Option<String>,
     loaded_files: HashSet<String>,
     working_dir: PathBuf,
+    pub strict_from_line: Option<usize>,
 }
 
 impl TypeChecker {
@@ -55,9 +56,28 @@ impl TypeChecker {
             current_file: None,
             loaded_files: HashSet::new(),
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            strict_from_line: None,
         };
         tc.register_builtins();
         tc
+    }
+
+    pub fn is_strict_at(&self, line: usize) -> bool {
+        match self.strict_from_line {
+            Some(strict_line) => line >= strict_line,
+            None => false,
+        }
+    }
+
+    pub fn contains_forbidden_strict_type(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Something | Type::Nothing => true,
+            Type::Vect(inner) => self.contains_forbidden_strict_type(inner),
+            Type::Map(k, v) => self.contains_forbidden_strict_type(k) || self.contains_forbidden_strict_type(v),
+            Type::Union(types) => types.iter().any(|t| self.contains_forbidden_strict_type(t)),
+            Type::Tuple(types) => types.iter().any(|t| self.contains_forbidden_strict_type(t)),
+            _ => false,
+        }
     }
 
     pub fn with_file(mut self, file: impl Into<String>) -> Self {
@@ -138,6 +158,13 @@ impl TypeChecker {
             },
         );
         self.scopes[0].symbols.insert(
+            "Time".to_string(),
+            SymbolInfo {
+                ty: Type::Custom("time".to_string()),
+                is_const: true,
+            },
+        );
+        self.scopes[0].symbols.insert(
             "http".to_string(),
             SymbolInfo {
                 ty: Type::Custom("http".to_string()),
@@ -183,6 +210,13 @@ impl TypeChecker {
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), AlphaError> {
+        for stmt in &program.statements {
+            if let Statement::StrictDirective(span) = stmt {
+                if self.strict_from_line.is_none() || span.line < self.strict_from_line.unwrap() {
+                    self.strict_from_line = Some(span.line);
+                }
+            }
+        }
         // 0. First pass: process all imports
         for import in &program.imports {
             self.check_import(import)?;
@@ -317,7 +351,20 @@ impl TypeChecker {
             self.enter_scope();
             self.current_return_type = Some(func.return_type.clone());
 
+            if self.is_strict_at(func.span.line) && self.contains_forbidden_strict_type(&func.return_type) {
+                return Err(AlphaError::type_error(
+                    format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, func.return_type),
+                    func.span,
+                ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+            }
+
             for param in &func.params {
+                if self.is_strict_at(param.span.line) && self.contains_forbidden_strict_type(&param.ty) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                        param.span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                }
                 self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
             }
 
@@ -718,8 +765,36 @@ impl TypeChecker {
 
     fn check_statement(&mut self, stmt: &Statement) -> Result<(), AlphaError> {
         match stmt {
+            Statement::StrictDirective(span) => {
+                if self.strict_from_line.is_none() || span.line < self.strict_from_line.unwrap() {
+                    self.strict_from_line = Some(span.line);
+                }
+                Ok(())
+            }
+
             Statement::Var(decl) => {
+                if self.is_strict_at(decl.span.line) {
+                    if !decl.has_explicit_type {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Variable '{}' must have an explicit type annotation", decl.name),
+                            decl.span,
+                        ).with_hint(format!("Specify an explicit type, e.g. 'var {}: <type> = ...'", decl.name)));
+                    }
+                    if self.contains_forbidden_strict_type(&decl.ty) {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Variable '{}' cannot use forbidden type '{}'", decl.name, decl.ty),
+                            decl.span,
+                        ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                    }
+                }
+
                 let init_ty = self.check_expr(&decl.init)?;
+                if self.is_strict_at(decl.span.line) && self.contains_forbidden_strict_type(&init_ty) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Initializer for variable '{}' has forbidden type '{}'", decl.name, init_ty),
+                        decl.span,
+                    ).with_hint("Strict mode forbids expressions evaluating to 'something' or 'nothing'"));
+                }
                 let final_ty = if matches!(decl.init, Expr::VectNew(_)) && matches!(decl.ty, Type::Vect(_)) {
                     decl.ty.clone()
                 } else if matches!(decl.init, Expr::MapNew(_)) && matches!(decl.ty, Type::Map(_, _)) {
@@ -751,6 +826,15 @@ impl TypeChecker {
                 is_const,
                 span,
             } => {
+                if self.is_strict_at(span.line) {
+                    if overall_type.is_none() && types.iter().any(|t| t.is_none()) {
+                        return Err(AlphaError::type_error(
+                            "[Strict Mode] Tuple destructuring variables must have explicit type annotations",
+                            *span,
+                        ).with_hint("Annotate tuple types explicitly in strict mode"));
+                    }
+                }
+
                 let init_ty = self.check_expr(init)?;
                 if let Some(ov) = overall_type {
                     if !init_ty.is_assignable_to(ov) {
@@ -1107,7 +1191,9 @@ impl TypeChecker {
                     ));
                 }
                 self.enter_scope();
-                self.declare_variable(var_name, Type::Int, false, *span)?;
+                if let Some(v_name) = var_name {
+                    self.declare_variable(v_name, Type::Int, false, *span)?;
+                }
                 self.check_block(body)?;
                 self.exit_scope();
                 Ok(())
@@ -1191,7 +1277,16 @@ impl TypeChecker {
                 LiteralValue::String(_) => Ok(Type::String),
                 LiteralValue::Char(_) => Ok(Type::Char),
                 LiteralValue::Bool(_) => Ok(Type::Boolean),
-                LiteralValue::Nothing => Ok(Type::Nothing),
+                LiteralValue::Nothing => {
+                    let span = expr.span();
+                    if self.is_strict_at(span.line) {
+                        return Err(AlphaError::type_error(
+                            "[Strict Mode] 'nothing' literal is forbidden in strict mode",
+                            span,
+                        ).with_hint("Strict mode disallows 'nothing' and 'something'"));
+                    }
+                    Ok(Type::Nothing)
+                }
             },
 
             Expr::Variable(name, span) => {
@@ -1221,7 +1316,10 @@ impl TypeChecker {
 
                 match op {
                     BinaryOp::Add => {
-                        if *l_unwrapped == Type::Int && *r_unwrapped == Type::Int {
+                        if (*l_unwrapped == Type::Unt && (*r_unwrapped == Type::Unt || *r_unwrapped == Type::Int))
+                            || (*r_unwrapped == Type::Unt && (*l_unwrapped == Type::Unt || *l_unwrapped == Type::Int)) {
+                            Ok(Type::Unt)
+                        } else if *l_unwrapped == Type::Int && *r_unwrapped == Type::Int {
                             Ok(Type::Int)
                         } else if *l_unwrapped == Type::Float && *r_unwrapped == Type::Float {
                             Ok(Type::Float)
@@ -1237,7 +1335,10 @@ impl TypeChecker {
                         }
                     }
                     BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
-                        if *l_unwrapped == Type::Int && *r_unwrapped == Type::Int {
+                        if (*l_unwrapped == Type::Unt && (*r_unwrapped == Type::Unt || *r_unwrapped == Type::Int))
+                            || (*r_unwrapped == Type::Unt && (*l_unwrapped == Type::Unt || *l_unwrapped == Type::Int)) {
+                            Ok(Type::Unt)
+                        } else if *l_unwrapped == Type::Int && *r_unwrapped == Type::Int {
                             Ok(Type::Int)
                         } else if *l_unwrapped == Type::Float && *r_unwrapped == Type::Float {
                             Ok(Type::Float)
@@ -1317,6 +1418,13 @@ impl TypeChecker {
                         } else {
                             Ok(Type::Int)
                         };
+                    }
+
+                    if name == "benchmark" {
+                        for arg in args {
+                            self.check_expr(arg)?;
+                        }
+                        return Ok(Type::Int);
                     }
 
                     if let Some(func) = self.lookup_function(name).cloned() {
@@ -1490,12 +1598,12 @@ impl TypeChecker {
                                 "seed" => Ok(Type::Nothing),
                                 _ => Ok(Type::Something),
                             };
-                        } else if custom_name == "time" {
+                        } else if custom_name == "time" || custom_name == "Time" {
                             for a in args {
                                 self.check_expr(a)?;
                             }
                             return match method.as_str() {
-                                "now" | "now_ms" | "elapsed" => Ok(Type::Int),
+                                "now" | "now_ms" | "elapsed" | "benchmark" => Ok(Type::Int),
                                 "sleep" => Ok(Type::Nothing),
                                 _ => Ok(Type::Something),
                             };
@@ -1708,7 +1816,13 @@ impl TypeChecker {
                 Ok(target_type.clone())
             }
 
-            Expr::ForceUnwrap { expr, span: _ } => {
+            Expr::ForceUnwrap { expr, span } => {
+                if self.is_strict_at(span.line) {
+                    return Err(AlphaError::type_error(
+                        "[Strict Mode] Force unwrap operators ('!' / '!?') are forbidden in strict mode",
+                        *span,
+                    ).with_hint("Handle box/union types safely using 'check' pattern matching"));
+                }
                 let ty = self.check_expr(expr)?;
                 Ok(ty.unwrapped_non_nothing().clone())
             }
@@ -1800,6 +1914,13 @@ impl TypeChecker {
                     tys.push(self.check_expr(el)?);
                 }
                 Ok(Type::Tuple(tys))
+            }
+
+            Expr::Block(block) => {
+                self.enter_scope();
+                self.check_block(block)?;
+                self.exit_scope();
+                Ok(Type::Something)
             }
 
             Expr::Slice { object, start, end, inclusive: _, span } => {

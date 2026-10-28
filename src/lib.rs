@@ -5,6 +5,7 @@ pub mod backend;
 pub mod diagnostics;
 pub mod driver;
 pub mod frontend;
+pub mod lsp;
 pub mod runtime;
 pub mod semantics;
 
@@ -13,5 +14,6 @@ pub use backend::compiler;
 pub use diagnostics::error;
 pub use driver::{cli, project};
 pub use frontend::{ast, lexer, parser, token};
+pub use lsp::server::LspServer;
 pub use runtime::{env, interpreter, stdlib, value};
 pub use semantics::{typechecker, types};

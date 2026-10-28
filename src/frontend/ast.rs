@@ -81,6 +81,7 @@ pub struct VarDecl {
     pub is_const: bool,
     pub ty: Type,
     pub init: Expr,
+    pub has_explicit_type: bool,
     pub span: Span,
 }
 
@@ -219,6 +220,7 @@ pub enum Expr {
     MapNew(Span),
     Tuple(Vec<Expr>, Span),
     HexColor(String, Span),
+    Block(Block),
     Slice {
         object: Box<Expr>,
         start: Option<Box<Expr>>,
@@ -252,6 +254,7 @@ impl Expr {
             Expr::MapNew(s) => *s,
             Expr::Tuple(_, s) => *s,
             Expr::HexColor(_, s) => *s,
+            Expr::Block(b) => b.span,
             Expr::Slice { span, .. } => *span,
         }
     }
@@ -304,7 +307,7 @@ pub enum Statement {
         span: Span,
     },
     ForRange {
-        var_name: String,
+        var_name: Option<String>,
         start: Expr,
         end: Expr,
         inclusive: bool,
@@ -347,6 +350,7 @@ pub enum Statement {
     },
     Enum(EnumDecl),
     Module(ModuleDecl),
+    StrictDirective(Span),
     Expr(Expr),
 }
 
@@ -374,6 +378,7 @@ impl Statement {
             Statement::Verify { span, .. } => *span,
             Statement::Enum(e) => e.span,
             Statement::Module(m) => m.span,
+            Statement::StrictDirective(s) => *s,
             Statement::Expr(e) => e.span(),
         }
     }

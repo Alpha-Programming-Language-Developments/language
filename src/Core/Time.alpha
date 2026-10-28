@@ -1,0 +1,9 @@
+// Core standard library module: Time
+// Provides real-time clock, timers, sleep, and benchmarking utilities.
+
+// Methods on 'time' / 'Time':
+//   time.now() -> int              - Returns current Unix timestamp in seconds.
+//   time.now_ms() -> int           - Returns current Unix timestamp in milliseconds.
+//   time.sleep(ms: int) -> nothing - Suspends current execution for the given milliseconds.
+//   time.elapsed(start_ms: int) -> int - Returns milliseconds elapsed since start_ms.
+//   time.benchmark({ ... }) -> int - Measures execution time of a code block in milliseconds.

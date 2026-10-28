@@ -3,9 +3,16 @@ name = "Alpha"
 version = "0.1.0"
 schema_version = 1
 authors = ["Alpha Team"]
-description = "Syntax highlighting and language support for the Alpha programming language"
+description = "Syntax highlighting, autocompletion and diagnostic validation via alpha-lsp for the Alpha programming language"
 repository = "https://github.com/alpha-lang/alpha"
 
 [grammars.alpha]
 repository = "file:///D:/RustProjects/alpha-lang/editors/zed-alpha/tree-sitter-alpha"
-rev = "36fea0d538dea4f031eadc100afb1cb842815aef"
+rev = "da35703b9d64c4f5f60cbd2f78f98c50321eedb4"
+
+[language_servers.alpha-lsp]
+name = "alpha-lsp"
+languages = ["Alpha"]
+
+[language_servers.alpha-lsp.language_ids]
+"Alpha" = "alpha"

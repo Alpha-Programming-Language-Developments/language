@@ -92,6 +92,7 @@ impl Interpreter {
         self.env.define("console", Value::BuiltinNamespace("console".to_string()), true);
         self.env.define("random", Value::BuiltinNamespace("random".to_string()), true);
         self.env.define("time", Value::BuiltinNamespace("time".to_string()), true);
+        self.env.define("Time", Value::BuiltinNamespace("time".to_string()), true);
         self.env.define("http", Value::BuiltinNamespace("http".to_string()), true);
         self.env.define("json", Value::BuiltinNamespace("json".to_string()), true);
         self.env.define("cli", Value::BuiltinNamespace("cli".to_string()), true);
@@ -577,11 +578,27 @@ impl Interpreter {
 
     fn eval_statement(&mut self, stmt: &Statement) -> Result<ControlSignal, AlphaError> {
         match stmt {
+            Statement::StrictDirective(_) => Ok(ControlSignal::None),
             Statement::Block(b) => self.eval_block(b),
             Statement::Defer { statement, .. } => self.eval_statement(statement),
 
             Statement::Var(decl) => {
-                let val = self.eval_expr(&decl.init)?;
+                let mut val = self.eval_expr(&decl.init)?;
+                if decl.ty == Type::Unt {
+                    match val {
+                        Value::Int(i) => {
+                            if i < 0 {
+                                return Err(AlphaError::runtime(
+                                    format!("Cannot assign negative value {} to unsigned int 'unt'", i),
+                                    decl.span,
+                                ));
+                            }
+                            val = Value::Unt(i as u64);
+                        }
+                        Value::Unt(_) => {}
+                        _ => {}
+                    }
+                }
                 self.env.define(decl.name.clone(), val, decl.is_const);
                 Ok(ControlSignal::None)
             }
@@ -626,7 +643,7 @@ impl Interpreter {
 
                 match target {
                     Expr::Variable(name, _) => {
-                        let final_val = match op {
+                        let mut final_val = match op {
                             AssignOp::Assign => rhs_val,
                             AssignOp::AddAssign => {
                                 let cur = self.env.get(name).unwrap_or(Value::Int(0));
@@ -649,6 +666,17 @@ impl Interpreter {
                                 self.mod_values(&cur, &rhs_val, *span)?
                             }
                         };
+                        if let Some(Value::Unt(_)) = self.env.get(name) {
+                            if let Value::Int(i) = final_val {
+                                if i < 0 {
+                                    return Err(AlphaError::runtime(
+                                        format!("Cannot assign negative value {} to unsigned int 'unt'", i),
+                                        *span,
+                                    ));
+                                }
+                                final_val = Value::Unt(i as u64);
+                            }
+                        }
                         self.env.assign(name, final_val).map_err(|e| AlphaError::runtime(e, *span))?;
                     }
                     Expr::Tuple(targets, target_span) => {
@@ -887,6 +915,7 @@ impl Interpreter {
                                 ValueKey::String(s) => Value::String(s),
                                 ValueKey::Char(c) => Value::Char(c),
                                 ValueKey::Boolean(b) => Value::Boolean(b),
+                                ValueKey::Unt(u) => Value::Unt(u),
                             };
 
                             if let Some(k_name) = key_var {
@@ -1049,7 +1078,9 @@ impl Interpreter {
                     }
 
                     self.env.enter_scope();
-                    self.env.define(var_name.clone(), Value::Int(cur), false);
+                    if let Some(v_name) = var_name {
+                        self.env.define(v_name.clone(), Value::Int(cur), false);
+                    }
                     let signal = self.eval_block(body)?;
                     self.env.exit_scope();
 
@@ -1289,6 +1320,30 @@ impl Interpreter {
                                 other => return Err(AlphaError::runtime(format!("paint expects hexcolor as 2nd argument, found '{}'", other.type_name()), *span)),
                             };
                             return Ok(Value::String(crate::runtime::stdlib::format_hex_paint(&text, &hex)));
+                        }
+                        "benchmark" => {
+                            if evaluated_args.is_empty() {
+                                return Err(AlphaError::runtime("benchmark requires a block or function argument", *span));
+                            }
+                            let start = std::time::Instant::now();
+                            match &evaluated_args[0] {
+                                Value::Block(blk) => {
+                                    self.env.enter_scope();
+                                    let _ = self.eval_block(blk)?;
+                                    self.env.exit_scope();
+                                }
+                                Value::Function(func) => {
+                                    self.call_function(func, &[], *span)?;
+                                }
+                                other => {
+                                    return Err(AlphaError::runtime(
+                                        format!("benchmark expects block or function, got '{}'", other.type_name()),
+                                        *span,
+                                    ));
+                                }
+                            }
+                            let elapsed = start.elapsed().as_millis() as i64;
+                            return Ok(Value::Int(elapsed));
                         }
                         _ => {}
                     }
@@ -1569,7 +1624,7 @@ impl Interpreter {
                             let cmd = evaluated_args[0].to_string();
                             let output = execute_console_command(&cmd, *span)?;
                             Ok(Value::String(output))
-                        } else if name == "time" {
+                        } else if name == "time" || name == "Time" {
                             match method.as_str() {
                                 "now" => Ok(Value::Int(crate::runtime::stdlib::time_now())),
                                 "now_ms" => Ok(Value::Int(crate::runtime::stdlib::time_now_ms())),
@@ -1581,6 +1636,30 @@ impl Interpreter {
                                 "elapsed" => {
                                     let start = evaluated_args.first().and_then(|a| a.as_int()).unwrap_or(0);
                                     Ok(Value::Int(crate::runtime::stdlib::time_elapsed(start)))
+                                }
+                                "benchmark" => {
+                                    if evaluated_args.is_empty() {
+                                        return Err(AlphaError::runtime("time.benchmark requires a block or function argument", *span));
+                                    }
+                                    let start = std::time::Instant::now();
+                                    match &evaluated_args[0] {
+                                        Value::Block(blk) => {
+                                            self.env.enter_scope();
+                                            let _ = self.eval_block(blk)?;
+                                            self.env.exit_scope();
+                                        }
+                                        Value::Function(func) => {
+                                            self.call_function(func, &[], *span)?;
+                                        }
+                                        other => {
+                                            return Err(AlphaError::runtime(
+                                                format!("time.benchmark expects block or function, got '{}'", other.type_name()),
+                                                *span,
+                                            ));
+                                        }
+                                    }
+                                    let elapsed = start.elapsed().as_millis() as i64;
+                                    Ok(Value::Int(elapsed))
                                 }
                                 _ => Err(AlphaError::runtime(format!("Unknown method '{}' on time", method), *span)),
                             }
@@ -1935,6 +2014,28 @@ impl Interpreter {
             } => {
                 let val = self.eval_expr(expr)?;
                 match target_type {
+                    Type::Unt => match &val {
+                        Value::Unt(u) => Ok(Value::Unt(*u)),
+                        Value::Int(i) => {
+                            if *i < 0 {
+                                Err(AlphaError::runtime(format!("Cannot cast negative integer {} to unt", i), *span))
+                            } else {
+                                Ok(Value::Unt(*i as u64))
+                            }
+                        }
+                        Value::Float(f) => {
+                            if *f < 0.0 {
+                                Err(AlphaError::runtime(format!("Cannot cast negative float {} to unt", f), *span))
+                            } else {
+                                Ok(Value::Unt(*f as u64))
+                            }
+                        }
+                        Value::String(s) => s.trim().parse::<u64>().map(Value::Unt).map_err(|_| {
+                            AlphaError::runtime(format!("Cannot cast string \"{}\" to unt", s), *span)
+                        }),
+                        Value::Boolean(b) => Ok(Value::Unt(if *b { 1 } else { 0 })),
+                        _ => Err(AlphaError::runtime(format!("Cannot cast '{}' to unt", val.type_name()), *span)),
+                    },
                     Type::Int => match &val {
                         Value::Int(i) => Ok(Value::Int(*i)),
                         Value::Float(f) => Ok(Value::Int(*f as i64)),
@@ -2082,6 +2183,7 @@ impl Interpreter {
             Expr::VectNew(_) => Ok(Value::Vect(Rc::new(RefCell::new(Vec::new())))),
             Expr::MapNew(_) => Ok(Value::Map(Rc::new(RefCell::new(HashMap::new())))),
             Expr::HexColor(h, _) => Ok(Value::HexColor(h.clone())),
+            Expr::Block(b) => Ok(Value::Block(b.clone())),
 
             Expr::Tuple(elements, _) => {
                 let mut vals = Vec::new();
@@ -2262,6 +2364,9 @@ impl Interpreter {
 
     fn add_values(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => Ok(Value::Unt(x + y)),
+            (Value::Unt(x), Value::Int(y)) if *y >= 0 => Ok(Value::Unt(x + *y as u64)),
+            (Value::Int(x), Value::Unt(y)) if *x >= 0 => Ok(Value::Unt(*x as u64 + y)),
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x + y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 + y)),
@@ -2277,6 +2382,19 @@ impl Interpreter {
 
     fn sub_values(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => {
+                if x < y {
+                    return Err(AlphaError::runtime("Unsigned integer underflow in subtraction", span));
+                }
+                Ok(Value::Unt(x - y))
+            }
+            (Value::Unt(x), Value::Int(y)) if *y >= 0 => {
+                let yu = *y as u64;
+                if x < &yu {
+                    return Err(AlphaError::runtime("Unsigned integer underflow in subtraction", span));
+                }
+                Ok(Value::Unt(x - yu))
+            }
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x - y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 - y)),
@@ -2290,6 +2408,9 @@ impl Interpreter {
 
     fn mul_values(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => Ok(Value::Unt(x * y)),
+            (Value::Unt(x), Value::Int(y)) if *y >= 0 => Ok(Value::Unt(x * *y as u64)),
+            (Value::Int(x), Value::Unt(y)) if *x >= 0 => Ok(Value::Unt(*x as u64 * y)),
             (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Float(x * y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Float(*x as f64 * y)),
@@ -2303,6 +2424,13 @@ impl Interpreter {
 
     fn div_values(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => {
+                if *y == 0 {
+                    return Err(AlphaError::runtime("Division by zero", span).with_hint("Denominator cannot be 0 in division"));
+                }
+                Ok(Value::Unt(x / y))
+            }
+            (Value::Unt(x), Value::Int(y)) if *y > 0 => Ok(Value::Unt(x / *y as u64)),
             (Value::Int(x), Value::Int(y)) => {
                 if *y == 0 {
                     return Err(AlphaError::runtime("Division by zero", span)
@@ -2340,6 +2468,13 @@ impl Interpreter {
 
     fn mod_values(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => {
+                if *y == 0 {
+                    return Err(AlphaError::runtime("Modulo by zero", span).with_hint("Denominator cannot be 0 in modulo operation"));
+                }
+                Ok(Value::Unt(x % y))
+            }
+            (Value::Unt(x), Value::Int(y)) if *y > 0 => Ok(Value::Unt(x % *y as u64)),
             (Value::Int(x), Value::Int(y)) => {
                 if *y == 0 {
                     return Err(AlphaError::runtime("Modulo by zero", span)
@@ -2356,6 +2491,9 @@ impl Interpreter {
 
     fn cmp_less(&self, a: &Value, b: &Value, span: Span) -> Result<Value, AlphaError> {
         match (a, b) {
+            (Value::Unt(x), Value::Unt(y)) => Ok(Value::Boolean(x < y)),
+            (Value::Unt(x), Value::Int(y)) => Ok(Value::Boolean(*y >= 0 && *x < (*y as u64))),
+            (Value::Int(x), Value::Unt(y)) => Ok(Value::Boolean(*x < 0 || (*x as u64) < *y)),
             (Value::Int(x), Value::Int(y)) => Ok(Value::Boolean(x < y)),
             (Value::Float(x), Value::Float(y)) => Ok(Value::Boolean(x < y)),
             (Value::Int(x), Value::Float(y)) => Ok(Value::Boolean((*x as f64) < *y)),

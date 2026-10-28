@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 // Dynamic runtime values for the Alpha programming language.
-use crate::frontend::ast::FunctionDecl;
+use crate::frontend::ast::{Block, FunctionDecl};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
@@ -27,6 +27,7 @@ pub struct StructureInstance {
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
+    Unt(u64),
     Float(f64),
     String(String),
     Char(char),
@@ -41,6 +42,7 @@ pub enum Value {
     StructureInstance(StructureInstance),
     Tuple(Vec<Value>),
     HexColor(String),
+    Block(Block),
     EnumVariant {
         enum_name: String,
         variant: String,
@@ -52,6 +54,7 @@ pub enum Value {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValueKey {
     Int(i64),
+    Unt(u64),
     String(String),
     Char(char),
     Boolean(bool),
@@ -76,6 +79,10 @@ impl Hash for ValueKey {
                 3u8.hash(state);
                 b.hash(state);
             }
+            ValueKey::Unt(u) => {
+                4u8.hash(state);
+                u.hash(state);
+            }
         }
     }
 }
@@ -84,6 +91,7 @@ impl std::fmt::Display for ValueKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ValueKey::Int(i) => write!(f, "{}", i),
+            ValueKey::Unt(u) => write!(f, "{}", u),
             ValueKey::String(s) => write!(f, "{}", s),
             ValueKey::Char(c) => write!(f, "{}", c),
             ValueKey::Boolean(b) => write!(f, "{}", b),
@@ -94,6 +102,14 @@ impl std::fmt::Display for ValueKey {
 impl Value {
     pub fn is_nothing(&self) -> bool {
         matches!(self, Value::Nothing)
+    }
+
+    pub fn as_unt(&self) -> Option<u64> {
+        match self {
+            Value::Unt(u) => Some(*u),
+            Value::Int(i) if *i >= 0 => Some(*i as u64),
+            _ => None,
+        }
     }
 
     pub fn as_int(&self) -> Option<i64> {
@@ -115,6 +131,7 @@ impl Value {
     pub fn to_key(&self) -> Result<ValueKey, String> {
         match self {
             Value::Int(i) => Ok(ValueKey::Int(*i)),
+            Value::Unt(u) => Ok(ValueKey::Unt(*u)),
             Value::String(s) => Ok(ValueKey::String(s.clone())),
             Value::Char(c) => Ok(ValueKey::Char(*c)),
             Value::Boolean(b) => Ok(ValueKey::Boolean(*b)),
@@ -125,6 +142,7 @@ impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Int(_) => "int",
+            Value::Unt(_) => "unt",
             Value::Float(_) => "float",
             Value::String(_) => "string",
             Value::Char(_) => "char",
@@ -139,6 +157,7 @@ impl Value {
             Value::StructureInstance(_) => "structure",
             Value::Tuple(_) => "tuple",
             Value::HexColor(_) => "hexcolor",
+            Value::Block(_) => "block",
             Value::EnumVariant { .. } => "enum",
         }
     }
@@ -182,6 +201,9 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Unt(a), Value::Unt(b)) => a == b,
+            (Value::Int(a), Value::Unt(b)) => *a >= 0 && (*a as u64) == *b,
+            (Value::Unt(a), Value::Int(b)) => *b >= 0 && *a == (*b as u64),
             (Value::Float(a), Value::Float(b)) => (a - b).abs() < f64::EPSILON,
             (Value::Int(a), Value::Float(b)) => (*a as f64 - b).abs() < f64::EPSILON,
             (Value::Float(a), Value::Int(b)) => (a - *b as f64).abs() < f64::EPSILON,
@@ -207,6 +229,7 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Int(i) => write!(f, "{}", i),
+            Value::Unt(u) => write!(f, "{}", u),
             Value::Float(fl) => write!(f, "{}", fl),
             Value::String(s) => write!(f, "{}", s),
             Value::Char(c) => write!(f, "{}", c),
@@ -223,6 +246,7 @@ impl fmt::Display for Value {
                 for (k, v) in map.iter() {
                     let k_str = match k {
                         ValueKey::Int(i) => i.to_string(),
+                        ValueKey::Unt(u) => u.to_string(),
                         ValueKey::String(s) => format!("\"{}\"", s),
                         ValueKey::Char(c) => format!("'{}'", c),
                         ValueKey::Boolean(b) => b.to_string(),
@@ -249,6 +273,7 @@ impl fmt::Display for Value {
             }
             Value::HexColor(h) => write!(f, "#({})", h),
             Value::EnumVariant { enum_name, variant, .. } => write!(f, "{}.{}", enum_name, variant),
+            Value::Block(_) => write!(f, "<block>"),
         }
     }
 }

@@ -142,6 +142,13 @@ pub fn run_cli() -> Result<(), AlphaError> {
             Ok(())
         }
 
+        "lsp" => {
+            let mut server = crate::lsp::LspServer::new();
+            server.run().map_err(|e| {
+                AlphaError::runtime(format!("LSP server error: {}", e), Default::default())
+            })
+        }
+
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())

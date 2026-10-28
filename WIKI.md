@@ -21,6 +21,7 @@ Welcome to the comprehensive reference manual and documentation for the **Alpha 
 
 ### 2.1 Primitive Types
 - `int`: 64-bit signed integer (`10`, `-42`).
+- `unt`: 64-bit unsigned integer (`0` to `18_446_744_073_709_551_615`). Safe unsigned arithmetic, division, modulo, and comparisons.
 - `float`: 64-bit IEEE-754 floating-point number (`3.14`, `-0.005`).
 - `string`: UTF-8 encoded text (`"Alpha Language"`).
 - `char`: Unicode scalar character (`'A'`, `'λ'`).
@@ -44,6 +45,35 @@ function find_id(name: string) [public, <int, nothing>] {
         return 1
     }
     return nothing
+}
+```
+
+### 2.5 Strict Typing Mode (`@strict`)
+Adding `@strict` at the top of a file (or at any point) activates enterprise-grade strict typechecking from that line forward:
+1. **Explicit Typing Required**: Every variable must have an explicit type annotation (`var x: int = 10`). Untyped declarations like `var x = 10` are rejected.
+2. **Safe Box / Union Handling**: Values wrapped in union/box types must be unpacked with `check` pattern matching. Force unwrap operators (`!?`, `!`) are strictly prohibited!
+3. **No `something` or `nothing`**: Dynamic `something` and `nothing` types and literals are forbidden.
+4. **Zero Tolerance**: Any violation immediately halts compilation with a `[Strict Mode]` error.
+
+```alpha
+@strict
+
+function safe_div(a: int, b: int) [public, <int, string>] {
+    if b == 0 {
+        return "Division by zero"
+    }
+    return a / b
+}
+
+function main() [public, int] {
+    var result: <int, string> = safe_div(10, 2)
+    
+    // In @strict mode, must handle with check:
+    var final_val: int = check result {
+        (5) => 5,
+        else => 0
+    }
+    return final_val
 }
 ```
 
@@ -142,6 +172,7 @@ function get?user?name() [public, string] {
 
 ### If / Else
 ```alpha
+var score: int = 95
 if score > 90 {
     print("Grade: A")
 } else if score > 75 {
@@ -158,8 +189,8 @@ for i = 1, i <= 10, i++ {
     printf("i = {}\n", i)
 }
 
-// 2. Count loop (repeats N times)
-for count = 5 {
+// 2. Repeat range loop (repeats N times without loop variable)
+for 1...5 {
     print("Pinging server...")
 }
 
@@ -207,16 +238,18 @@ var result: string = check status_code {
 
 Blocks are supported inside branches:
 ```alpha
-check command {
-    "start" => {
-        setup_engine()
-        return true
-    },
-    "stop" => {
-        shutdown_engine()
-        return false
-    },
-    _ => return false
+function handle_command(command: string) [public, boolean] {
+    check command {
+        "start" => {
+            return true
+        },
+        "stop" => {
+            return false
+        },
+        _ => {
+            return false
+        }
+    }
 }
 ```
 
@@ -264,6 +297,9 @@ function process_data(path: string) [public, nothing] {
 
 Validates assumptions and invariants. Halts with an error if the condition is false:
 ```alpha
+var divider: int = 5
+var buffer: string = "data"
+
 verify divider != 0, "Divider cannot be zero"
 verify buffer.len() > 0, "Buffer is empty"
 ```
@@ -421,13 +457,15 @@ function main() [public, nothing] {
 - `time.now_ms()`: Current timestamp in milliseconds (`int`).
 - `time.sleep(ms)`: Pauses thread execution for given milliseconds.
 - `time.elapsed(start_ms)`: Calculates elapsed milliseconds since `start_ms`.
+- `time.benchmark({ ... })`: Measures and returns execution duration of the block in milliseconds (`int`).
 
 ### `Core/Math.alpha`
-- `math.abs(x)`: Absolute value.
-- `math.min(a, b)` / `math.max(a, b)`: Minimum and maximum.
-- `math.clamp(val, min, max)`: Clamps value within bounds.
-- `math.sqrt(x)`: Square root (`float`).
-- `math.pow(base, exp)`: Power exponentiation.
+- `math.abs(x)` / `abs(x)`: Absolute value.
+- `math.min(a, b)` / `min(a, b)`: Minimum of two numbers.
+- `math.max(a, b)` / `max(a, b)`: Maximum of two numbers.
+- `math.clamp(val, min, max)` / `clamp(...)`: Clamps value within bounds.
+- `math.pow(base, exp)` / `pow(...)`: Power exponentiation.
+- `math.sqr(n)` / `sqr(n)`: Square of `n` (returns `<int, nothing>`).
 
 ### `Core/Random.alpha`
 - `random()` / `random.float()`: Random float in `[0.0, 1.0)`.
@@ -447,7 +485,7 @@ function main() [public, nothing] {
 - `json.stringify(value)`: Serializes Alpha values into JSON string.
 
 ### `Core/Machine.alpha`
-- `machine.console_out(text)`: Raw low-level stdout printing.
+- `console.out(command)`: Executes system command in the terminal and returns its stdout string (`string`).
 
 ---
 
@@ -492,6 +530,7 @@ alpha --help
 
 ### 2.1 Примитивные типы
 - `int`: 64-битное целое со знаком (`42`, `-10`).
+- `unt`: 64-битное целое без знака (`0` до `18_446_744_073_709_551_615`). Поддерживает беззнаковую арифметику, деление, остаток `%` и сравнения. Присвоение отрицательных чисел пресекается компилятором и рантаймом.
 - `float`: 64-битное число с плавающей точкой (`3.14`, `-0.5`).
 - `string`: Строка в кодировке UTF-8 (`"Привет, Alpha!"`).
 - `char`: Символ Unicode (`'A'`, `'я'`).
@@ -515,6 +554,35 @@ function get_data(id: int) [public, <string, nothing>] {
         return "Успешно"
     }
     return nothing
+}
+```
+
+### 2.5 Режим строгой типизации (`@strict`)
+Добавление директивы `@strict` в файл активирует бескомпромиссную строгую проверку типов для всех последующих строк:
+1. **Обязательная явная типизация**: Каждая переменная обязана иметь явно указанный тип (`var x: int = 10`). Объявления вида `var x = 10` запрещены.
+2. **Безопасная распаковка Box / Union типов**: Значения составных union/box типов обязаны обрабатываться через безопасное сопоставление `check`. Использование операторов форсированного развертывания (`!?` и `!`) строго запрещено!
+3. **Полный запрет `something` и `nothing`**: Запрещено объявлять типы `something` / `nothing` или использовать литерал `nothing`.
+4. **Строгий контроль**: При малейшем нарушении компилятор останавливает сборку с ошибкой `[Strict Mode]`.
+
+```alpha
+@strict
+
+function calculate(a: int, b: int) [public, <int, string>] {
+    if b == 0 {
+        return "Деление на ноль"
+    }
+    return a / b
+}
+
+function main() [public, int] {
+    var res: <int, string> = calculate(10, 2)
+    
+    // В режиме @strict обязательна безопасная обработка:
+    var final_val: int = check res {
+        (5) => 5,
+        else => 0
+    }
+    return final_val
 }
 ```
 
@@ -613,6 +681,7 @@ function user?has?access() [public, boolean] {
 
 ### Условия If / Else
 ```alpha
+var age: int = 20
 if age >= 18 {
     print("Доступ разрешён")
 } else {
@@ -627,8 +696,8 @@ for i = 1, i <= 10, i++ {
     printf("Шаг: {}\n", i)
 }
 
-// 2. Цикл по количеству повторений (N раз)
-for count = 3 {
+// 2. Цикл повторений без переменной-счётчика (N раз)
+for 1...3 {
     print("Уведомление!")
 }
 
@@ -676,16 +745,18 @@ var text: string = check status {
 
 Поддерживаются блоки кода:
 ```alpha
-check command {
-    "start" => {
-        init()
-        return true
-    },
-    "stop" => {
-        cleanup()
-        return false
-    },
-    _ => return false
+function handle_command(command: string) [public, boolean] {
+    check command {
+        "start" => {
+            return true
+        },
+        "stop" => {
+            return false
+        },
+        _ => {
+            return false
+        }
+    }
 }
 ```
 
@@ -733,6 +804,9 @@ function send_message(dest: string) [public, nothing] {
 
 Проверка инвариантов и предусловий:
 ```alpha
+var divider: int = 5
+var name: string = "Alpha"
+
 verify divider != 0, "Делитель не может быть равен нулю!"
 verify name.len() > 0, "Имя не может быть пустым"
 ```
@@ -881,13 +955,15 @@ function main() [public, nothing] {
 - `time.now_ms()`: UNIX-время в миллисекундах (`int`).
 - `time.sleep(ms)`: Задержка выполнения потока в миллисекундах.
 - `time.elapsed(start_ms)`: Количество миллисекунд, прошедших с `start_ms`.
+- `time.benchmark({ ... })`: Замеряет и возвращает время выполнения блока кода в миллисекундах (`int`).
 
 ### `Core/Math.alpha`
-- `math.abs(x)`: Модуль числа.
-- `math.min(a, b)` / `math.max(a, b)`: Минимум и максимум.
-- `math.clamp(val, min, max)`: Ограничение диапазона.
-- `math.sqrt(x)`: Квадратный корень (`float`).
-- `math.pow(base, exp)`: Возведение в степень.
+- `math.abs(x)` / `abs(x)`: Модуль числа.
+- `math.min(a, b)` / `min(a, b)`: Минимум из двух чисел.
+- `math.max(a, b)` / `max(a, b)`: Максимум из двух чисел.
+- `math.clamp(val, min, max)` / `clamp(...)`: Ограничение диапазона.
+- `math.pow(base, exp)` / `pow(...)`: Возведение в степень.
+- `math.sqr(n)` / `sqr(n)`: Квадрат числа (возвращает `<int, nothing>`).
 
 ### `Core/Random.alpha`
 - `random()` / `random.float()`: Случайный float в диапазоне `[0.0, 1.0)`.
@@ -907,7 +983,7 @@ function main() [public, nothing] {
 - `json.stringify(val)`: Сериализация значения в строку JSON.
 
 ### `Core/Machine.alpha`
-- `machine.console_out(text)`: Низкоуровневый прямой вывод в stdout.
+- `console.out(command)`: Выполняет терминальную команду операционной системы и возвращает её вывод (`string`).
 
 ---
 
@@ -934,3 +1010,57 @@ alpha --version
 alpha -h
 alpha --help
 ```
+
+---
+
+## 15. Language Server (`alpha-lsp`) & Editor Integration
+
+The Alpha language includes an official Language Server Protocol implementation (`alpha-lsp`) providing IDE features for editors like **Zed**, VS Code, and Neovim.
+
+### Features
+- **Real-time Diagnostics**: Immediate feedback on syntax errors, type-check errors, and `@strict` violations as you type.
+- **Smart Completions**: Auto-completes keywords, primitive types (`unt`, `int`), and standard library modules (`Io`, `Fs`, `Time`, `Math`, `Env`).
+- **Hover Documentation**: Detailed documentation for keywords, types, and functions.
+
+### Running the Language Server
+```bash
+# Direct binary
+alpha-lsp
+
+# Or via alpha CLI subcommand
+alpha lsp
+```
+
+### Zed Editor Extension (`editors/zed-alpha`)
+The `editors/zed-alpha` folder contains a complete Zed extension:
+1. In Zed, open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+2. Run `zed: install dev extension`.
+3. Select `editors/zed-alpha`.
+4. Zed automatically links Tree-sitter syntax highlighting, symbol outline, and connects to `alpha-lsp`.
+
+---
+
+## 15. Language Server (`alpha-lsp`) и интеграция с редакторами
+
+В состав языка Alpha входит официальный сервер языка по протоколу LSP (`alpha-lsp`), обеспечивающий поддержку для редакторов **Zed**, VS Code, Neovim и других.
+
+### Возможности
+- **Диагностика в реальном времени**: Мгновенная подсветка синтаксических ошибок, несоответствия типов и нарушений директивы `@strict` при вводе.
+- **Автодополнение (Completions)**: Подсказки по ключевым словам, примитивным типам (`unt`, `int`, etc.), функциям и модулям стандартной библиотеки (`Io`, `Fs`, `Time`, `Math`, `Env`).
+- **Всплывающая документация (Hover)**: Подробные описания и примеры при наведении курсора на ключевые слова, директивы и типы.
+
+### Запуск Language Server
+```bash
+# Отдельный исполняемый файл
+alpha-lsp
+
+# Либо через CLI команду
+alpha lsp
+```
+
+### Расширение для редактора Zed (`editors/zed-alpha`)
+В папке `editors/zed-alpha` находится готовое расширение для Zed:
+1. В Zed откройте командную палитру (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+2. Выберите команду `zed: install dev extension`.
+3. Укажите папку `editors/zed-alpha`.
+4. Zed активирует подсветку Tree-sitter, дерево символов и подключит `alpha-lsp` для валидации и подсказок.

@@ -307,6 +307,26 @@ impl<'a> Lexer<'a> {
             // Numbers
             '0'..='9' => return self.lex_number(ch, start_line, start_col, start_pos),
 
+            '@' => {
+                let mut dir = String::new();
+                while let Some(c) = self.peek() {
+                    if c.is_alphabetic() || c == '_' {
+                        dir.push(c);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                if dir == "strict" {
+                    let end_pos = self.current_byte_pos();
+                    let span = Span::new(start_line, start_col, start_pos, end_pos);
+                    return Ok(Token::new(TokenKind::AtStrict, span, "@strict"));
+                } else {
+                    let span = Span::new(start_line, start_col, start_pos, self.current_byte_pos());
+                    return Err(AlphaError::lex(format!("Unknown directive '@{}'. Did you mean '@strict'?", dir), span));
+                }
+            }
+
             // Identifiers / Keywords
             c if is_ident_start(c) => {
                 return self.lex_identifier(c, start_line, start_col, start_pos)
@@ -612,6 +632,7 @@ impl<'a> Lexer<'a> {
             "false" => TokenKind::False,
             "nothing" => TokenKind::Nothing,
             "int" => TokenKind::TypeInt,
+            "unt" => TokenKind::TypeUnt,
             "float" => TokenKind::TypeFloat,
             "string" => TokenKind::TypeString,
             "char" => TokenKind::TypeChar,

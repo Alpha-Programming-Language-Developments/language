@@ -1,3 +1,7 @@
+; Directives
+(strict_directive) @keyword.directive
+"@strict" @keyword.directive
+
 ; Keywords
 "structure" @keyword
 "attach" @keyword
@@ -19,7 +23,6 @@
 "for" @keyword.control
 "each" @keyword.control
 "in" @keyword.control
-"count" @keyword.control
 "try" @keyword.control
 "catch" @keyword.control
 "system" @keyword.control

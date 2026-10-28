@@ -190,6 +190,7 @@ impl Parser {
                     | TokenKind::Module
                     | TokenKind::Nothing
                     | TokenKind::TypeInt
+            | TokenKind::TypeUnt
                     | TokenKind::TypeFloat
                     | TokenKind::TypeString
                     | TokenKind::TypeChar
@@ -232,8 +233,11 @@ impl Parser {
     // -------------------------------------------------------------
     fn parse_var_decl(&mut self, is_const: bool, start_span: Span) -> Result<VarDecl, AlphaError> {
         let name_tok = self.expect_ident()?;
-        self.expect(&TokenKind::Colon)?;
-        let ty = self.parse_type()?;
+        let (ty, has_explicit_type) = if self.match_token(&TokenKind::Colon) {
+            (self.parse_type()?, true)
+        } else {
+            (Type::Something, false)
+        };
 
         self.expect(&TokenKind::Equal)?;
         let init = self.parse_expr()?;
@@ -244,6 +248,7 @@ impl Parser {
             is_const,
             ty,
             init,
+            has_explicit_type,
             span: start_span.merge(end_span),
         })
     }
@@ -378,6 +383,8 @@ impl Parser {
                     self.skip_semicolons();
                 }
                 self.expect(&TokenKind::RBrace)?;
+            } else if self.check(&TokenKind::Function) {
+                methods.push(self.parse_attached_method(&name)?);
             } else {
                 // Field declaration: name: type
                 let f_name = self.expect_ident()?;
@@ -555,6 +562,7 @@ impl Parser {
         let tok = self.advance();
         match tok.kind {
             TokenKind::TypeInt => Ok(Type::Int),
+            TokenKind::TypeUnt => Ok(Type::Unt),
             TokenKind::TypeFloat => Ok(Type::Float),
             TokenKind::TypeString => Ok(Type::String),
             TokenKind::TypeChar => Ok(Type::Char),
@@ -581,6 +589,10 @@ impl Parser {
                 if self.match_token(&TokenKind::Dot) {
                     let sub = self.expect_ident()?;
                     Ok(Type::Custom(format!("{}.{}", name, sub.text)))
+                } else if name == "IoFile" {
+                    Ok(Type::Custom("Io.File".to_string()))
+                } else if name == "FsDir" {
+                    Ok(Type::Custom("Fs.Dir".to_string()))
                 } else {
                     Ok(Type::Custom(name))
                 }
@@ -634,6 +646,10 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Statement, AlphaError> {
         if self.is_system_block() {
             return self.parse_system_statement();
+        }
+
+        if self.match_token(&TokenKind::AtStrict) {
+            return Ok(Statement::StrictDirective(self.previous().span));
         }
 
         if self.check(&TokenKind::Structure) {
@@ -865,7 +881,10 @@ impl Parser {
         let start_pos = self.peek().span;
         let mut binding = None;
 
-        let pattern = if self.match_token(&TokenKind::Else) {
+        let pattern = if self.match_token(&TokenKind::Else) || matches!(&self.peek().kind, TokenKind::Ident(s) if s == "_") {
+            if matches!(&self.peek().kind, TokenKind::Ident(s) if s == "_") {
+                self.advance();
+            }
             CheckPattern::Else
         } else if self.match_token(&TokenKind::Nothing) || self.match_token(&TokenKind::TypeNothing) {
             CheckPattern::Nothing
@@ -1004,7 +1023,7 @@ impl Parser {
                 let body = self.parse_block()?;
                 let body_span = body.span;
                 return Ok(Statement::ForRange {
-                    var_name,
+                    var_name: if var_name == "_" { None } else { Some(var_name) },
                     start,
                     end,
                     inclusive,
@@ -1018,6 +1037,25 @@ impl Parser {
                     item_var: var_name,
                     key_var: None,
                     collection: start,
+                    body,
+                    span: start_span.merge(body_span),
+                });
+            }
+        }
+
+        // Case 2.6: Repeat range loop without variable: 'for 1...3 {' or 'for 1..3 {'
+        if self.check_range_ahead_before_brace_or_sep() {
+            let start = self.parse_expr()?;
+            if self.match_token(&TokenKind::DotDotDot) || self.match_token(&TokenKind::DotDot) {
+                let inclusive = self.previous().kind == TokenKind::DotDotDot;
+                let end = self.parse_expr()?;
+                let body = self.parse_block()?;
+                let body_span = body.span;
+                return Ok(Statement::ForRange {
+                    var_name: None,
+                    start,
+                    end,
+                    inclusive,
                     body,
                     span: start_span.merge(body_span),
                 });
@@ -1397,6 +1435,11 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, AlphaError> {
+        if self.check(&TokenKind::LBrace) {
+            let block = self.parse_block()?;
+            return Ok(Expr::Block(block));
+        }
+
         let tok = self.advance();
         match tok.kind {
             TokenKind::IntLit(n) => Ok(Expr::Literal(LiteralValue::Int(n), tok.span)),
@@ -1521,6 +1564,27 @@ impl Parser {
         } else {
             &self.peek().kind == kind
         }
+    }
+
+    fn check_range_ahead_before_brace_or_sep(&self) -> bool {
+        let mut idx = self.current;
+        let mut has_dotdot = false;
+        while idx < self.tokens.len() {
+            match &self.tokens[idx].kind {
+                TokenKind::DotDot | TokenKind::DotDotDot => {
+                    has_dotdot = true;
+                }
+                TokenKind::Comma | TokenKind::Semicolon => {
+                    return false;
+                }
+                TokenKind::LBrace => {
+                    return has_dotdot;
+                }
+                _ => {}
+            }
+            idx += 1;
+        }
+        false
     }
 
     fn check_next(&self, kind: &TokenKind) -> bool {

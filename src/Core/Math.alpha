@@ -1,35 +1,105 @@
 // Core standard library module: Math
 // Provides basic mathematical helper functions written in Alpha.
 
-function min(a: int, b: int) [public, int] {
-    if a < b {
-        return a
-    } else {
-        return b
+module Math {
+    function min(a: int, b: int) [public, int] {
+        if a < b {
+            return a
+        } else {
+            return b
+        }
     }
+
+    function max(a: int, b: int) [public, int] {
+        if a > b {
+            return a
+        } else {
+            return b
+        }
+    }
+
+    function abs(n: int) [public, int] {
+        if n < 0 {
+            return -n
+        } else {
+            return n
+        }
+    }
+
+    function clamp(val: int, min_val: int, max_val: int) [public, int] {
+        if val < min_val {
+            return min_val
+        }
+        if val > max_val {
+            return max_val
+        }
+        return val
+    }
+
+    function pow(base: int, exp: int) [public, int] {
+        var res: int = 1
+        for 1...exp {
+            res = res * base
+        }
+        return res
+    }
+
+    function sqr(n: int) [public, <int, nothing>] {
+        if n < 0 {
+            return nothing
+        } else {
+            return n * n
+        }
+    }
+}
+
+module math {
+    function min(a: int, b: int) [public, int] {
+        return Math.min(a, b)
+    }
+
+    function max(a: int, b: int) [public, int] {
+        return Math.max(a, b)
+    }
+
+    function abs(n: int) [public, int] {
+        return Math.abs(n)
+    }
+
+    function clamp(val: int, min_val: int, max_val: int) [public, int] {
+        return Math.clamp(val, min_val, max_val)
+    }
+
+    function pow(base: int, exp: int) [public, int] {
+        return Math.pow(base, exp)
+    }
+
+    function sqr(n: int) [public, <int, nothing>] {
+        return Math.sqr(n)
+    }
+}
+
+// Global helper functions
+function min(a: int, b: int) [public, int] {
+    return Math.min(a, b)
 }
 
 function max(a: int, b: int) [public, int] {
-    if a > b {
-        return a
-    } else {
-        return b
-    }
+    return Math.max(a, b)
 }
 
 function abs(n: int) [public, int] {
-    if n < 0 {
-        return -n
-    } else {
-        return n
-    }
+    return Math.abs(n)
+}
+
+function clamp(val: int, min_val: int, max_val: int) [public, int] {
+    return Math.clamp(val, min_val, max_val)
+}
+
+function pow(base: int, exp: int) [public, int] {
+    return Math.pow(base, exp)
 }
 
 function sqr(n: int) [public, <int, nothing>] {
-    if n < 0 {
-        return nothing
-    }
-    else {
-        return n * n
-    }
+    return Math.sqr(n)
 }
