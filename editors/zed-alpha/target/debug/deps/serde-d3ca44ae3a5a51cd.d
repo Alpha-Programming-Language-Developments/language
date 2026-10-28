@@ -1,0 +1,14 @@
+C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\deps\serde-d3ca44ae3a5a51cd.d: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\build\serde-9201e20a8dd33fd6\out/private.rs
+
+C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\deps\libserde-d3ca44ae3a5a51cd.rlib: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\build\serde-9201e20a8dd33fd6\out/private.rs
+
+C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\deps\libserde-d3ca44ae3a5a51cd.rmeta: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\build\serde-9201e20a8dd33fd6\out/private.rs
+
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+C:\Users\Max\AppData\Local\Zed\extensions\installed\alpha\target\debug\build\serde-9201e20a8dd33fd6\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Max\\AppData\\Local\\Zed\\extensions\\installed\\alpha\\target\\debug\\build\\serde-9201e20a8dd33fd6\\out

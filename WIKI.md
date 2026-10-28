@@ -276,7 +276,7 @@ function validate_age(age: int) [public, nothing] {
 
 ---
 
-## 10. Deferred Execution (`make schedule` / Defer)
+## 10. Deferred Execution (`make schedule`)
 
 Guarantees execution of cleanup code when exiting the current scope. Schedules run in **LIFO** (Last In, First Out) order:
 
@@ -783,7 +783,7 @@ function check_not_empty(str: string) [public, nothing] {
 
 ---
 
-## 10. Отложенное выполнение (`make schedule` / Defer)
+## 10. Отложенное выполнение (`make schedule`)
 
 Гарантирует выполнение блока очистки ресурсов при выходе из области видимости. Выполняется по принципу **LIFO** (последним запланирован — первым выполнен):
 

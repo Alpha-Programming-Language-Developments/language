@@ -181,7 +181,7 @@ The compiled binary will be placed in the `build/` folder:
 
 ## 📚 Complete Language Manual
 
-For an exhaustive guide covering types, control structures, pattern matching, I/O, file systems, defer, networking, and all standard library modules, read our **[Full WIKI Documentation (English & Russian)](WIKI.md)**.
+For an exhaustive guide covering types, control structures, pattern matching, I/O, file systems, scheduled deferred execution (`make schedule`), networking, and all standard library modules, read our **[Full WIKI Documentation (English & Russian)](WIKI.md)**.
 
 ---
 

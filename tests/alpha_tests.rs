@@ -66,6 +66,7 @@ for i = 0, i < 5, i++ {
 #[test]
 fn test_format_strings() {
     let source = r#"
+import Core/Basic.alpha
 var time: string = format("{2}:{2}:{2}", 2, 30, 10)
 var greeting: string = format("Hello, {}!", "Alpha")
 "#;
@@ -324,6 +325,7 @@ fn test_io_file_operations() {
 
     let source = format!(
         r#"
+import Core/Io.alpha
 var file: Io.File = Io.open("{path}")
 file.reset()
 file.write("line 1\nline 2")
@@ -354,6 +356,8 @@ fn test_fs_dir_and_env_operations() {
 
     let source = format!(
         r#"
+import Core/Fs.alpha
+import Core/Env.alpha
 var d: Fs.Dir = dir.open("{path}")
 d.create("subfolder")
 d.file.create("sample.txt")
@@ -417,6 +421,7 @@ function main() [public, nothing] {
 #[test]
 fn test_try_catch_runtime_error() {
     let source = r#"
+import Core/Basic.alpha
 var caught: string = "none"
 
 try {
@@ -1084,11 +1089,11 @@ function push_trace(s: string) [public, nothing] {
 
 function run_deferred() [public, int] {
     push_trace("start;")
-    defer push_trace("first_defer;")
-    defer {
+    make schedule push_trace("first_defer;")
+    make schedule {
         push_trace("second_defer_block;")
     }
-    defer push_trace("third_defer;")
+    make schedule push_trace("third_defer;")
 
     push_trace("middle;")
     return 42
@@ -1691,4 +1696,150 @@ var x = 10";
     let errors = validate_alpha_code(strict_violation);
     assert!(!errors.is_empty());
     assert!(errors[0].message.contains("[Strict Mode]"));
+}
+
+
+#[test]
+fn test_core_module_import_required_for_basic() {
+    let source = r#"
+function main() [public, nothing] {
+    print("hello without import")
+}
+"#;
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut tc = TypeChecker::new();
+    let err = tc.check_program(&program).expect_err("Should fail without import Core/Basic.alpha");
+    assert!(err.message.contains("requires 'import Core/Basic.alpha'"));
+}
+
+#[test]
+fn test_core_module_import_required_for_time() {
+    let source = r#"
+function main() [public, int] {
+    return Time.now()
+}
+"#;
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut tc = TypeChecker::new();
+    let err = tc.check_program(&program).expect_err("Should fail without import Core/Time.alpha");
+    assert!(err.message.contains("requires importing its Core library module"));
+}
+
+#[test]
+fn test_defer_keyword_rejected_with_hint() {
+    let source = r#"
+function test() [public, nothing] {
+    defer do_something()
+}
+"#;
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let err = parser.parse_program().expect_err("defer should be rejected");
+    assert!(err.message.contains("The 'defer' keyword has been removed"));
+}
+
+
+#[test]
+fn test_alpha_lsp_features() {
+    use alpha_lang::lsp::LspServer;
+    use serde_json::json;
+
+    let mut server = LspServer::new();
+    let uri = "file:///test.alpha";
+    let doc = r#"import Core/Basic.alpha
+import Core/Time.alpha
+
+structure Player {
+    name: string,
+    score: unt,
+}
+
+enum Status {
+    Active,
+    Idle,
+}
+
+function calculate_sum(a: int, b: int) [public, int] {
+    return a + b
+}
+
+var global_count: int = 100
+"#;
+
+    server.add_document(uri, doc);
+
+    // 1. Document symbols outline
+    let sym_req = json!({
+        "params": {
+            "textDocument": { "uri": uri }
+        }
+    });
+    let symbols = server.get_document_symbols(&sym_req);
+    let sym_arr = symbols.as_array().expect("Expected symbols array");
+    assert!(sym_arr.iter().any(|s| s["name"].as_str() == Some("calculate_sum(...)")));
+    assert!(sym_arr.iter().any(|s| s["name"].as_str() == Some("Player")));
+    assert!(sym_arr.iter().any(|s| s["name"].as_str() == Some("Status")));
+    assert!(sym_arr.iter().any(|s| s["name"].as_str() == Some("global_count")));
+
+    // 2. Go to definition
+    let def_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 13, "character": 12 } // on "calculate_sum"
+        }
+    });
+    let def_res = server.get_definition(&def_req);
+    assert_eq!(def_res["uri"].as_str(), Some(uri));
+    assert_eq!(def_res["range"]["start"]["line"].as_u64(), Some(13));
+
+    // 3. Hover
+    let hover_unt = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 12 } // on "unt"
+        }
+    });
+    let hover_res = server.get_hover(&hover_unt);
+    let hover_text = hover_res["contents"]["value"].as_str().unwrap_or_default();
+    assert!(hover_text.contains("64-bit unsigned integer"));
+
+    let hover_func = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 13, "character": 12 } // on "calculate_sum"
+        }
+    });
+    let hover_func_res = server.get_hover(&hover_func);
+    let func_text = hover_func_res["contents"]["value"].as_str().unwrap_or_default();
+    assert!(func_text.contains("calculate_sum"));
+
+    // 4. Completions after "import "
+    let comp_import_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 0, "character": 7 } // right after "import "
+        }
+    });
+    let comp_import = server.get_completions(&comp_import_req);
+    assert!(comp_import.iter().any(|c| c["label"].as_str() == Some("Core/Basic.alpha")));
+    assert!(comp_import.iter().any(|c| c["label"].as_str() == Some("Core/Time.alpha")));
+
+    // 5. Signature help
+    let sig_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 13, "character": 24 } // after "calculate_sum("
+        }
+    });
+    let sig_res = server.get_signature_help(&sig_req);
+    assert!(sig_res["signatures"].is_array());
 }

@@ -709,26 +709,37 @@ impl Parser {
             });
         }
 
-        let is_schedule = if self.match_token(&TokenKind::Defer) {
-            Some(self.previous().span)
-        } else if self.check(&TokenKind::Make) && self.check_next(&TokenKind::Schedule) {
+        if self.peek().text == "defer" {
+            let span = self.peek().span;
+            return Err(AlphaError::parse(
+                "The 'defer' keyword has been removed from Alpha. Use 'make schedule { ... }' instead.",
+                span,
+            ).with_hint("Replace 'defer <stmt>' with 'make schedule { <stmt> }'"));
+        }
+
+        if self.check(&TokenKind::Make) && self.check_next(&TokenKind::Schedule) {
             let make_span = self.advance().span;
             let sched_span = self.advance().span;
-            Some(make_span.merge(sched_span))
-        } else {
-            None
-        };
-
-        if let Some(start_span) = is_schedule {
-            let deferred = if self.check(&TokenKind::LBrace) {
+            let start_span = make_span.merge(sched_span);
+            let scheduled = if self.check(&TokenKind::LBrace) {
                 let block = self.parse_block()?;
                 Statement::Block(block)
+            } else if self.match_token(&TokenKind::LParen) {
+                let stmt = if self.check(&TokenKind::LBrace) {
+                    let blk = self.parse_block()?;
+                    Statement::Block(blk)
+                } else {
+                    let expr = self.parse_expr()?;
+                    Statement::Expr(expr)
+                };
+                self.expect(&TokenKind::RParen)?;
+                stmt
             } else {
                 self.parse_statement()?
             };
-            let span = start_span.merge(deferred.span());
-            return Ok(Statement::Defer {
-                statement: Box::new(deferred),
+            let span = start_span.merge(scheduled.span());
+            return Ok(Statement::Schedule {
+                statement: Box::new(scheduled),
                 span,
             });
         }

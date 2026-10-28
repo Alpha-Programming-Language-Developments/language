@@ -1,6 +1,5 @@
 ; Directives
 (strict_directive) @keyword.directive
-"@strict" @keyword.directive
 
 ; Keywords
 "structure" @keyword

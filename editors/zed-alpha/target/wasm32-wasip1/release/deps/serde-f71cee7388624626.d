@@ -1,0 +1,14 @@
+D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\deps\serde-f71cee7388624626.d: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\build\serde-62841c808fab0ba5\out/private.rs
+
+D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\deps\libserde-f71cee7388624626.rlib: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\build\serde-62841c808fab0ba5\out/private.rs
+
+D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\deps\libserde-f71cee7388624626.rmeta: C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\build\serde-62841c808fab0ba5\out/private.rs
+
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\Max\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\build\serde-62841c808fab0ba5\out/private.rs:
+
+# env-dep:OUT_DIR=D:\\RustProjects\\alpha-lang\\editors\\zed-alpha\\target\\wasm32-wasip1\\release\\build\\serde-62841c808fab0ba5\\out

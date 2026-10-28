@@ -339,7 +339,7 @@ pub enum Statement {
         span: Span,
     },
     Block(Block),
-    Defer {
+    Schedule {
         statement: Box<Statement>,
         span: Span,
     },
@@ -374,7 +374,7 @@ impl Statement {
             Statement::Continue(s) => *s,
             Statement::System { span, .. } => *span,
             Statement::Block(b) => b.span,
-            Statement::Defer { span, .. } => *span,
+            Statement::Schedule { span, .. } => *span,
             Statement::Verify { span, .. } => *span,
             Statement::Enum(e) => e.span,
             Statement::Module(m) => m.span,

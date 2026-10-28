@@ -600,7 +600,6 @@ impl<'a> Lexer<'a> {
             "public" => TokenKind::Public,
             "here" => TokenKind::Here,
             "return" => TokenKind::Return,
-            "defer" => TokenKind::Defer,
             "if" => TokenKind::If,
             "elseif" => TokenKind::ElseIf,
             "else" => TokenKind::Else,

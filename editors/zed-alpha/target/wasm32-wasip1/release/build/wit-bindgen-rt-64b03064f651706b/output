@@ -1,0 +1,2 @@
+cargo:rustc-link-lib=static=wit_bindgen_cabi_realloc0_41_0
+cargo:rustc-link-search=native=D:\RustProjects\alpha-lang\editors\zed-alpha\target\wasm32-wasip1\release\build\wit-bindgen-rt-64b03064f651706b\out
