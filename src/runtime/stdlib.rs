@@ -468,6 +468,36 @@ pub fn fetch_web_module(url: &str) -> Result<String, String> {
     }
 }
 
+/// Formats text with 24-bit ANSI truecolor escape codes for terminal output.
+pub fn format_hex_paint(text: &str, hex: &str) -> String {
+    let (r, g, b) = crate::runtime::value::Value::hex_to_rgb(hex);
+    format!("\x1b[38;2;{};{};{}m{}\x1b[0m", r, g, b, text)
+}
+
+/// Parses the contents of a `packages.alpaks` file:
+/// "alias" = import web::"url"
+pub fn parse_packages_alpaks(content: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((left, right)) = trimmed.split_once('=') {
+            let alias = left.trim().trim_matches('"').trim_matches('\'').trim().to_string();
+            let right_trimmed = right.trim();
+            if let Some(url_part) = right_trimmed.strip_prefix("import") {
+                let url_part = url_part.trim();
+                if let Some(url) = url_part.strip_prefix("web::") {
+                    let cleaned_url = url.trim().trim_matches('"').trim_matches('\'').to_string();
+                    map.insert(alias, cleaned_url);
+                }
+            }
+        }
+    }
+    map
+}
+
 // -------------------------------------------------------------
 // Random Number Generator (SplitMix64)
 // -------------------------------------------------------------

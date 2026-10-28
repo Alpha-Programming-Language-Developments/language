@@ -2,6 +2,7 @@
 name = "alpha-lang"
 version = "0.1.0"
 edition = "2024"
+default-run = "alpha"
 
 [dependencies]
 toml = "0.8"

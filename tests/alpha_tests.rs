@@ -831,9 +831,9 @@ function get_triple() [public, (int, string, boolean)] {
 function main() [public, boolean] {
     // 1. Literal and indexing
     var t: (int, string, boolean) = get_triple()
-    var v0: int = (t[0] -> int)
-    var v1: string = (t[1] -> string)
-    var v2: boolean = (t[2] -> boolean)
+    var v1: int = (t[1] -> int)
+    var v2: string = (t[2] -> string)
+    var v3: boolean = (t[3] -> boolean)
 
     // 2. Unpacking without types
     var (num, text) = get_pair()
@@ -844,7 +844,7 @@ function main() [public, boolean] {
     // 4. Tuple assignment
     (num, text) = (77, "updated")
 
-    if v0 == 10 && v1 == "alpha" && v2 == true && num == 77 && text == "updated" && x == 100 && y == "hello" {
+    if v1 == 10 && v2 == "alpha" && v3 == true && num == 77 && text == "updated" && x == 100 && y == "hello" {
         return true
     } else {
         return false
@@ -871,10 +871,10 @@ fn test_slices_string_and_vector() {
 function main() [public, boolean] {
     // String slices
     var s: string = "hello world"
-    var sub1: string = s[0..5]      // "hello"
-    var sub2: string = s[6...10]    // "world" (inclusive)
-    var sub3: string = s[6..]       // "world"
-    var sub4: string = s[..5]       // "hello"
+    var sub1: string = s[1..6]      // "hello"
+    var sub2: string = s[7...11]    // "world" (inclusive)
+    var sub3: string = s[7..]       // "world"
+    var sub4: string = s[..6]       // "hello"
 
     // Vector slices
     var v: vect<int> = vect.new()
@@ -884,12 +884,12 @@ function main() [public, boolean] {
     v.push(40)
     v.push(50)
 
-    var v_slice1: vect<int> = v[1..3]    // [20, 30]
-    var v_slice2: vect<int> = v[3...]    // [40, 50]
-    var v_slice3: vect<int> = v[..2]     // [10, 20]
+    var v_slice1: vect<int> = v[2..4]    // [20, 30]
+    var v_slice2: vect<int> = v[4...]    // [40, 50]
+    var v_slice3: vect<int> = v[..3]     // [10, 20]
 
     var ok_str: boolean = sub1 == "hello" && sub2 == "world" && sub3 == "world" && sub4 == "hello"
-    var ok_vec: boolean = v_slice1.len() == 2 && v_slice1[0] == 20 && v_slice1[1] == 30 && v_slice2.len() == 2 && v_slice2[0] == 40 && v_slice3.len() == 2 && v_slice3[1] == 20
+    var ok_vec: boolean = v_slice1.len() == 2 && v_slice1[1] == 20 && v_slice1[2] == 30 && v_slice2.len() == 2 && v_slice2[1] == 40 && v_slice3.len() == 2 && v_slice3[1] == 10 && v_slice3[2] == 20
 
     if ok_str && ok_vec {
         return true
@@ -957,7 +957,7 @@ function main() [public, boolean] {
     var score: int = (data.get("score") -> int)
     var active: boolean = (data.get("active") -> boolean)
     var items: vect<int> = (data.get("items") -> vect<int>)
-    var first_item: int = (items[0] -> int)
+    var first_item: int = (items[1] -> int)
 
     // Serialization test
     var out_json: string = json.stringify(data)
@@ -1315,3 +1315,174 @@ function main() [public, boolean] {{
 
 
 
+
+#[test]
+fn test_enum_feature() {
+    let source = r#"
+enum Status {
+    Pending,
+    Active,
+    Done
+}
+
+function main() [public, boolean] {
+    var s1: Status = Status.Pending
+    var s2: Status = Status.Active
+    var s3: Status = Status.Done
+
+    var is_pending: boolean = s1 == Status.Pending
+    var not_done: boolean = s2 != Status.Done
+
+    return is_pending && not_done && (s3 == Status.Done)
+}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Type check failed");
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_hexcolor_and_cli_paint() {
+    let source = r#"
+import Core/Cli.alpha
+
+function main() [public, boolean] {
+    var color: hexcolor = #(FFF00)
+    var bg: hexcolor = #(00AAFF)
+
+    var painted1: string = paint("Alpha Text", color)
+    var painted2: string = cli.paint("CLI Painted", bg)
+
+    return painted1.len() > 10 && painted2.len() > 10
+}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Type check failed");
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_1_based_indexing_vector_and_map() {
+    let source = r#"
+function main() [public, boolean] {
+    // Vector 1-based indexing
+    var v: vect<string> = vect.new()
+    v.push("first")
+    v.push("second")
+    v.push("third")
+
+    var elem1: string = v[1]
+    var elem2: string = v[2]
+    var elem3: string = v[3]
+
+    // Vector assignment at 1-based index
+    v[2] = "updated_second"
+    var elem2_new: string = v[2]
+
+    // Map 1-based keys
+    var m: map<int, string> = map.new()
+    m.insert(1, "gold")
+    m.insert(2, "silver")
+
+    var val1: string = m[1]
+    var val2: string = m[2]
+
+    return elem1 == "first" && elem2 == "second" && elem3 == "third" && elem2_new == "updated_second" && val1 == "gold" && val2 == "silver"
+}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Type check failed");
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_module_namespace() {
+    let source = r#"
+module MathOps {
+    function add(a: int, b: int) [public, int] {
+        return a + b
+    }
+
+    function square(n: int) [public, int] {
+        return n * n
+    }
+}
+
+function main() [public, boolean] {
+    var sum: int = MathOps.add(10, 20)
+    var sq: int = MathOps.square(5)
+
+    return sum == 30 && sq == 25
+}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Type check failed");
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_cli_arguments() {
+    let source = r#"
+import Core/Cli.alpha
+
+function main() [public, boolean] {
+    var arguments: vect<string> = cli.arguments()
+    return arguments.len() == 2 && arguments[1] == "--verbose" && arguments[2] == "config.json"
+}
+"#;
+
+    let mut interp = Interpreter::new().with_cli_args(vec!["--verbose".to_string(), "config.json".to_string()]);
+    let res = interp.eval_source(source, None).expect("Execution failed");
+    assert_eq!(res, Value::Boolean(true));
+}
+
+#[test]
+fn test_direct_web_import_prohibited() {
+    let source = r#"
+import web::"https://example.com/mod.alpha"
+
+function main() [public, nothing] {}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let err = parser.parse_program().unwrap_err();
+    assert!(err.to_string().contains("packages.alpaks"));
+}

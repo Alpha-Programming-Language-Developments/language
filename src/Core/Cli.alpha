@@ -1,0 +1,7 @@
+// Core standard library module: Cli
+// Provides command-line arguments access and ANSI hexcolor terminal painting.
+
+// Usage:
+//   var arguments: vect<string> = cli.arguments()
+//   var colored: string = cli.paint("Hello", #(00FF00))
+//   var direct: string = paint("World", #(FF0000))

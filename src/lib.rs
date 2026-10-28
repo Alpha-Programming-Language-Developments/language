@@ -1,4 +1,6 @@
 // Alpha Programming Language Library.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub mod backend;
 pub mod diagnostics;
 pub mod driver;

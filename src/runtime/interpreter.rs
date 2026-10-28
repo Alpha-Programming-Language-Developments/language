@@ -32,6 +32,10 @@ pub struct Interpreter {
     pub env: Environment,
     functions: HashMap<String, StoredFunction>,
     pub structures: HashMap<String, StructureDecl>,
+    pub enums: HashMap<String, EnumDecl>,
+    pub modules: HashMap<String, ModuleDecl>,
+    pub cli_args: Vec<String>,
+    pub package_aliases: HashMap<String, String>,
     current_structure: Option<String>,
     loaded_files: HashSet<String>,
     source_modules: HashMap<String, String>,
@@ -45,6 +49,10 @@ impl Interpreter {
             env: Environment::new(),
             functions: HashMap::new(),
             structures: HashMap::new(),
+            enums: HashMap::new(),
+            modules: HashMap::new(),
+            cli_args: Vec::new(),
+            package_aliases: HashMap::new(),
             current_structure: None,
             loaded_files: HashSet::new(),
             source_modules: HashMap::new(),
@@ -53,6 +61,11 @@ impl Interpreter {
         };
         interp.init_globals();
         interp
+    }
+
+    pub fn with_cli_args(mut self, args: Vec<String>) -> Self {
+        self.cli_args = args;
+        self
     }
 
     pub fn with_working_dir(mut self, dir: PathBuf) -> Self {
@@ -81,6 +94,7 @@ impl Interpreter {
         self.env.define("time", Value::BuiltinNamespace("time".to_string()), true);
         self.env.define("http", Value::BuiltinNamespace("http".to_string()), true);
         self.env.define("json", Value::BuiltinNamespace("json".to_string()), true);
+        self.env.define("cli", Value::BuiltinNamespace("cli".to_string()), true);
     }
 
     /// Load and execute an Alpha source string.
@@ -98,6 +112,9 @@ impl Interpreter {
         let old_file = self.current_file.clone();
         self.current_file = file_name.map(|s| s.to_string());
 
+        // 0. Load package aliases from packages.alpaks
+        self.load_packages_alpaks();
+
         // 1. Process imports
         for import in &program.imports {
             self.execute_import(import)?;
@@ -110,6 +127,46 @@ impl Interpreter {
         for stmt in &program.statements {
             if let Statement::Structure(st) = stmt {
                 self.structures.insert(st.name.clone(), st.clone());
+            }
+        }
+
+        // 1.6 Register enums
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Enum(en) = stmt {
+                self.enums.insert(en.name.clone(), en.clone());
+            }
+        }
+
+        // 1.7 Register modules
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname,
+                    StoredFunction {
+                        decl: func.clone(),
+                        source_file: self.current_file.clone(),
+                    },
+                );
+            }
+        }
+        for stmt in &program.statements {
+            if let Statement::Module(m) = stmt {
+                self.modules.insert(m.name.clone(), m.clone());
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname,
+                        StoredFunction {
+                            decl: func.clone(),
+                            source_file: self.current_file.clone(),
+                        },
+                    );
+                }
             }
         }
 
@@ -222,6 +279,7 @@ impl Interpreter {
                         && core_path != "Core/Time.alpha"
                         && core_path != "Core/Http.alpha"
                         && core_path != "Core/Json.alpha"
+                        && core_path != "Core/Cli.alpha"
                     {
                         return Err(AlphaError::runtime(
                             format!("Core module '{}' not found", core_path),
@@ -233,6 +291,11 @@ impl Interpreter {
                 Ok(())
             }
             ImportTarget::Local(path_str) => {
+                let raw_name = path_str.trim_end_matches(".alpha");
+                if let Some(url) = self.package_aliases.get(path_str).or_else(|| self.package_aliases.get(raw_name)).cloned() {
+                    return self.load_web_module(&url, import.span);
+                }
+
                 let file_path = if self.source_modules.contains_key(path_str)
                     || self.source_modules.contains_key(&format!("src/{}", path_str))
                 {
@@ -258,37 +321,13 @@ impl Interpreter {
                 Ok(())
             }
             ImportTarget::Web(url) => {
-                if self.loaded_files.contains(url) {
-                    return Ok(());
-                }
-                self.loaded_files.insert(url.clone());
-                println!("[Alpha Notice] Loaded remote module: {}", url);
-
-                let source = crate::runtime::stdlib::fetch_web_module(url)
-                    .map_err(|e| AlphaError::runtime(e, import.span))?;
-                let mut lexer = Lexer::new(&source);
-                let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
-                let mut parser = Parser::new(tokens);
-                let program = parser.parse_program().map_err(|e| e.with_file(url))?;
-
-                for st in &program.structures {
-                    self.structures.insert(st.name.clone(), st.clone());
-                }
-
-                for func in &program.functions {
-                    self.functions.insert(
-                        func.name.clone(),
-                        StoredFunction {
-                            decl: func.clone(),
-                            source_file: Some(url.clone()),
-                        },
-                    );
-                }
-
-                for stmt in &program.statements {
-                    let _ = self.eval_statement(stmt)?;
-                }
-                Ok(())
+                Err(AlphaError::runtime(
+                    format!(
+                        "Direct web imports in source code are prohibited. Define '{}' in 'packages.alpaks' instead: \"alias\" = import web::\"{}\"",
+                        url, url
+                    ),
+                    import.span,
+                ))
             }
         }
     }
@@ -341,6 +380,44 @@ impl Interpreter {
             }
         }
 
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Enum(en) = stmt {
+                self.enums.insert(en.name.clone(), en.clone());
+            }
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname,
+                    StoredFunction {
+                        decl: func.clone(),
+                        source_file: self.current_file.clone(),
+                    },
+                );
+            }
+        }
+        for stmt in &program.statements {
+            if let Statement::Module(m) = stmt {
+                self.modules.insert(m.name.clone(), m.clone());
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname,
+                        StoredFunction {
+                            decl: func.clone(),
+                            source_file: self.current_file.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
         for func in &program.functions {
             // Check visibility: here vs public
             self.functions.insert(
@@ -357,6 +434,105 @@ impl Interpreter {
         }
 
         self.current_file = old_file;
+        Ok(())
+    }
+
+    pub fn load_packages_alpaks(&mut self) {
+        let candidates = [
+            self.working_dir.join("packages.alpaks"),
+            PathBuf::from("packages.alpaks"),
+        ];
+        for candidate in &candidates {
+            if candidate.exists() {
+                if let Ok(content) = fs::read_to_string(candidate) {
+                    let map = crate::runtime::stdlib::parse_packages_alpaks(&content);
+                    for (k, v) in map {
+                        self.package_aliases.insert(k, v);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn load_web_module(&mut self, url: &str, span: Span) -> Result<(), AlphaError> {
+        if self.loaded_files.contains(url) {
+            return Ok(());
+        }
+        self.loaded_files.insert(url.to_string());
+        println!("[Alpha Notice] Loaded remote module: {}", url);
+
+        let source = crate::runtime::stdlib::fetch_web_module(url)
+            .map_err(|e| AlphaError::runtime(e, span))?;
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program().map_err(|e| e.with_file(url))?;
+
+        for import in &program.imports {
+            self.execute_import(import)?;
+        }
+
+        for st in &program.structures {
+            self.structures.insert(st.name.clone(), st.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Structure(st) = stmt {
+                self.structures.insert(st.name.clone(), st.clone());
+            }
+        }
+
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Enum(en) = stmt {
+                self.enums.insert(en.name.clone(), en.clone());
+            }
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname,
+                    StoredFunction {
+                        decl: func.clone(),
+                        source_file: Some(url.to_string()),
+                    },
+                );
+            }
+        }
+        for stmt in &program.statements {
+            if let Statement::Module(m) = stmt {
+                self.modules.insert(m.name.clone(), m.clone());
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname,
+                        StoredFunction {
+                            decl: func.clone(),
+                            source_file: Some(url.to_string()),
+                        },
+                    );
+                }
+            }
+        }
+
+        for func in &program.functions {
+            self.functions.insert(
+                func.name.clone(),
+                StoredFunction {
+                    decl: func.clone(),
+                    source_file: Some(url.to_string()),
+                },
+            );
+        }
+
+        for stmt in &program.statements {
+            let _ = self.eval_statement(stmt)?;
+        }
         Ok(())
     }
 
@@ -510,10 +686,13 @@ impl Interpreter {
                             Value::Vect(vec_rc) => {
                                 if let Value::Int(i) = idx {
                                     let mut v = vec_rc.borrow_mut();
-                                    if i < 0 || (i as usize) >= v.len() {
-                                        return Err(AlphaError::runtime("Vector index out of bounds", *idx_span));
+                                    if i < 1 || (i as usize) > v.len() {
+                                        return Err(AlphaError::runtime(
+                                            format!("Vector index out of bounds: 1-based index {} but length is {}", i, v.len()),
+                                            *idx_span,
+                                        ));
                                     }
-                                    v[i as usize] = rhs_val;
+                                    v[(i - 1) as usize] = rhs_val;
                                 } else {
                                     return Err(AlphaError::runtime("Vector index must be an integer", *idx_span));
                                 }
@@ -901,6 +1080,26 @@ impl Interpreter {
                 Ok(ControlSignal::None)
             }
 
+            Statement::Enum(en) => {
+                self.enums.insert(en.name.clone(), en.clone());
+                Ok(ControlSignal::None)
+            }
+
+            Statement::Module(m) => {
+                self.modules.insert(m.name.clone(), m.clone());
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname,
+                        StoredFunction {
+                            decl: func.clone(),
+                            source_file: self.current_file.clone(),
+                        },
+                    );
+                }
+                Ok(ControlSignal::None)
+            }
+
             Statement::Expr(e) => {
                 let val = self.eval_expr(e)?;
                 if let Value::Function(f_decl) = val {
@@ -929,6 +1128,10 @@ impl Interpreter {
                     Ok(val)
                 } else if let Some(sf) = self.lookup_function(name) {
                     Ok(Value::Function(sf.decl.clone()))
+                } else if self.enums.contains_key(name) {
+                    Ok(Value::BuiltinNamespace(format!("enum:{}", name)))
+                } else if self.modules.contains_key(name) {
+                    Ok(Value::BuiltinNamespace(format!("module:{}", name)))
                 } else if self.structures.contains_key(name) || self.structures.keys().any(|k| k.replace('?', "") == name.replace('?', "")) {
                     let st_name = if self.structures.contains_key(name) {
                         name.clone()
@@ -1075,6 +1278,18 @@ impl Interpreter {
                             return Err(AlphaError::runtime(formatted, *span)
                                 .with_hint("An explicit error was triggered via the error() function"));
                         }
+                        "paint" => {
+                            if evaluated_args.len() < 2 {
+                                return Err(AlphaError::runtime("paint(text, hexcolor) requires 2 arguments", *span));
+                            }
+                            let text = evaluated_args[0].to_string();
+                            let hex = match &evaluated_args[1] {
+                                Value::HexColor(h) => h.clone(),
+                                Value::String(s) => s.clone(),
+                                other => return Err(AlphaError::runtime(format!("paint expects hexcolor as 2nd argument, found '{}'", other.type_name()), *span)),
+                            };
+                            return Ok(Value::String(crate::runtime::stdlib::format_hex_paint(&text, &hex)));
+                        }
                         _ => {}
                     }
 
@@ -1132,6 +1347,21 @@ impl Interpreter {
                 args,
                 span,
             } => {
+                if let Expr::Variable(mod_name, _) = &**object {
+                    if self.modules.contains_key(mod_name) {
+                        let qname = format!("{}.{}", mod_name, method);
+                        if let Some(sf) = self.lookup_function(&qname) {
+                            let mut evaluated_args = Vec::new();
+                            for a in args {
+                                evaluated_args.push(self.eval_expr(a)?);
+                            }
+                            return self.call_function(&sf.decl, &evaluated_args, *span);
+                        } else {
+                            return Err(AlphaError::runtime(format!("Module '{}' has no function '{}'", mod_name, method), *span));
+                        }
+                    }
+                }
+
                 let obj = self.eval_expr(object)?;
 
                 // Universal .nothing?() / .something?() check on values (unless specialized on IoFile / FsDir)
@@ -1163,10 +1393,10 @@ impl Interpreter {
                             }
                             if let Value::Int(i) = evaluated_args[0] {
                                 let v = vec_rc.borrow();
-                                if i < 0 || (i as usize) >= v.len() {
+                                if i < 1 || (i as usize) > v.len() {
                                     Ok(Value::Nothing)
                                 } else {
-                                    Ok(v[i as usize].clone())
+                                    Ok(v[(i - 1) as usize].clone())
                                 }
                             } else {
                                 Err(AlphaError::runtime("Vector index must be an integer", *span))
@@ -1469,6 +1699,34 @@ impl Interpreter {
                                 }
                                 _ => Err(AlphaError::runtime(format!("Unknown method '{}' on random", method), *span)),
                             }
+                        } else if name == "cli" {
+                            match method.as_str() {
+                                "arguments" => {
+                                    let args_vals: Vec<Value> = self.cli_args.iter().map(|s| Value::String(s.clone())).collect();
+                                    Ok(Value::Vect(Rc::new(RefCell::new(args_vals))))
+                                }
+                                "paint" => {
+                                    if evaluated_args.len() < 2 {
+                                        return Err(AlphaError::runtime("cli.paint(text, hexcolor) requires 2 arguments", *span));
+                                    }
+                                    let text = evaluated_args[0].to_string();
+                                    let hex = match &evaluated_args[1] {
+                                        Value::HexColor(h) => h.clone(),
+                                        Value::String(s) => s.clone(),
+                                        other => return Err(AlphaError::runtime(format!("cli.paint expects hexcolor as 2nd argument, found '{}'", other.type_name()), *span)),
+                                    };
+                                    Ok(Value::String(crate::runtime::stdlib::format_hex_paint(&text, &hex)))
+                                }
+                                _ => Err(AlphaError::runtime(format!("Unknown method '{}' on cli", method), *span)),
+                            }
+                        } else if name.starts_with("module:") {
+                            let mod_name = &name["module:".len()..];
+                            let qname = format!("{}.{}", mod_name, method);
+                            if let Some(sf) = self.lookup_function(&qname) {
+                                return self.call_function(&sf.decl, &evaluated_args, *span);
+                            } else {
+                                return Err(AlphaError::runtime(format!("Module '{}' has no function '{}'", mod_name, method), *span));
+                            }
                         } else {
                             Err(AlphaError::runtime(
                                 format!("Unknown method '{}' on namespace '{}'", method, name),
@@ -1489,10 +1747,44 @@ impl Interpreter {
             }
 
             Expr::MemberAccess { object, member, span } => {
+                if let Expr::Variable(name, _) = &**object {
+                    if let Some(en) = self.enums.get(name) {
+                        if let Some(ordinal) = en.variants.iter().position(|v| v == member) {
+                            return Ok(Value::EnumVariant {
+                                enum_name: name.clone(),
+                                variant: member.clone(),
+                                ordinal: ordinal + 1,
+                            });
+                        } else {
+                            return Err(AlphaError::runtime(
+                                format!("Enum '{}' has no variant '{}'", name, member),
+                                *span,
+                            ));
+                        }
+                    }
+                }
+
                 let obj = self.eval_expr(object)?;
 
                 match &obj {
                     Value::BuiltinNamespace(ns) => {
+                        if ns.starts_with("enum:") {
+                            let enum_name = &ns["enum:".len()..];
+                            if let Some(en) = self.enums.get(enum_name).cloned() {
+                                if let Some(ordinal) = en.variants.iter().position(|v| v == member) {
+                                    return Ok(Value::EnumVariant {
+                                        enum_name: enum_name.to_string(),
+                                        variant: member.clone(),
+                                        ordinal: ordinal + 1,
+                                    });
+                                } else {
+                                    return Err(AlphaError::runtime(
+                                        format!("Enum '{}' has no variant '{}'", enum_name, member),
+                                        *span,
+                                    ));
+                                }
+                            }
+                        }
                         if ns == "env" {
                             if member == "current" {
                                 let cur = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -1546,26 +1838,43 @@ impl Interpreter {
                     Value::Vect(vec_rc) => {
                         if let Value::Int(i) = idx {
                             let v = vec_rc.borrow();
-                            if i < 0 || (i as usize) >= v.len() {
-                                Err(AlphaError::runtime("Vector index out of bounds", *span))
+                            if i < 1 || (i as usize) > v.len() {
+                                Err(AlphaError::runtime(
+                                    format!("Vector index out of bounds: 1-based index {} but length is {}", i, v.len()),
+                                    *span,
+                                ))
                             } else {
-                                Ok(v[i as usize].clone())
+                                Ok(v[(i - 1) as usize].clone())
                             }
                         } else {
                             Err(AlphaError::runtime("Vector index must be an integer", *span))
                         }
                     }
                     Value::Map(map_rc) => {
-                        let key = idx.to_key().map_err(|e| AlphaError::runtime(e, *span))?;
                         let m = map_rc.borrow();
-                        Ok(m.get(&key).cloned().unwrap_or(Value::Nothing))
+                        let key = idx.to_key().map_err(|e| AlphaError::runtime(e, *span))?;
+                        if let Some(val) = m.get(&key) {
+                            Ok(val.clone())
+                        } else if let Value::Int(i) = idx {
+                            if i >= 1 && (i as usize) <= m.len() {
+                                let val = m.values().nth((i - 1) as usize).unwrap();
+                                Ok(val.clone())
+                            } else {
+                                Ok(Value::Nothing)
+                            }
+                        } else {
+                            Ok(Value::Nothing)
+                        }
                     }
                     Value::Tuple(elements) => {
                         if let Value::Int(i) = idx {
-                            if i < 0 || (i as usize) >= elements.len() {
-                                Err(AlphaError::runtime("Tuple index out of bounds", *span))
+                            if i < 1 || (i as usize) > elements.len() {
+                                Err(AlphaError::runtime(
+                                    format!("Tuple index out of bounds: 1-based index {} but length is {}", i, elements.len()),
+                                    *span,
+                                ))
                             } else {
-                                Ok(elements[i as usize].clone())
+                                Ok(elements[(i - 1) as usize].clone())
                             }
                         } else {
                             Err(AlphaError::runtime("Tuple index must be an integer", *span))
@@ -1574,10 +1883,13 @@ impl Interpreter {
                     Value::String(s) => {
                         if let Value::Int(i) = idx {
                             let chars: Vec<char> = s.chars().collect();
-                            if i < 0 || (i as usize) >= chars.len() {
-                                Err(AlphaError::runtime("String index out of bounds", *span))
+                            if i < 1 || (i as usize) > chars.len() {
+                                Err(AlphaError::runtime(
+                                    format!("String index out of bounds: 1-based index {} but length is {}", i, chars.len()),
+                                    *span,
+                                ))
                             } else {
-                                Ok(Value::Char(chars[i as usize]))
+                                Ok(Value::Char(chars[(i - 1) as usize]))
                             }
                         } else {
                             Err(AlphaError::runtime("String index must be an integer", *span))
@@ -1769,6 +2081,7 @@ impl Interpreter {
 
             Expr::VectNew(_) => Ok(Value::Vect(Rc::new(RefCell::new(Vec::new())))),
             Expr::MapNew(_) => Ok(Value::Map(Rc::new(RefCell::new(HashMap::new())))),
+            Expr::HexColor(h, _) => Ok(Value::HexColor(h.clone())),
 
             Expr::Tuple(elements, _) => {
                 let mut vals = Vec::new();
@@ -1797,16 +2110,28 @@ impl Interpreter {
                     Value::String(s) => {
                         let chars: Vec<char> = s.chars().collect();
                         let len = chars.len() as i64;
-                        let mut from = start_idx.unwrap_or(0);
-                        if from < 0 { from += len; }
-                        let from = from.clamp(0, len) as usize;
+                        let from = match start_idx {
+                            Some(s) if s >= 1 => ((s - 1) as usize).min(len as usize),
+                            Some(s) if s < 0 => (s + len).clamp(0, len) as usize,
+                            Some(_) => 0,
+                            None => 0,
+                        };
 
-                        let mut to = if let Some(mut e) = end_idx {
-                            if e < 0 { e += len; }
-                            if *inclusive { e += 1; }
-                            e.clamp(0, len) as usize
-                        } else {
-                            chars.len()
+                        let mut to = match end_idx {
+                            Some(mut e) => {
+                                if e >= 1 {
+                                    e -= 1;
+                                    if *inclusive { e += 1; }
+                                    e.clamp(0, len) as usize
+                                } else if e < 0 {
+                                    e += len;
+                                    if *inclusive { e += 1; }
+                                    e.clamp(0, len) as usize
+                                } else {
+                                    0
+                                }
+                            }
+                            None => len as usize,
                         };
                         if to < from { to = from; }
                         let slice_chars = &chars[from..to];
@@ -1816,16 +2141,28 @@ impl Interpreter {
                     Value::Vect(vec_rc) => {
                         let v = vec_rc.borrow();
                         let len = v.len() as i64;
-                        let mut from = start_idx.unwrap_or(0);
-                        if from < 0 { from += len; }
-                        let from = from.clamp(0, len) as usize;
+                        let from = match start_idx {
+                            Some(s) if s >= 1 => ((s - 1) as usize).min(len as usize),
+                            Some(s) if s < 0 => (s + len).clamp(0, len) as usize,
+                            Some(_) => 0,
+                            None => 0,
+                        };
 
-                        let mut to = if let Some(mut e) = end_idx {
-                            if e < 0 { e += len; }
-                            if *inclusive { e += 1; }
-                            e.clamp(0, len) as usize
-                        } else {
-                            v.len()
+                        let mut to = match end_idx {
+                            Some(mut e) => {
+                                if e >= 1 {
+                                    e -= 1;
+                                    if *inclusive { e += 1; }
+                                    e.clamp(0, len) as usize
+                                } else if e < 0 {
+                                    e += len;
+                                    if *inclusive { e += 1; }
+                                    e.clamp(0, len) as usize
+                                } else {
+                                    0
+                                }
+                            }
+                            None => len as usize,
                         };
                         if to < from { to = from; }
                         let slice_items = v[from..to].to_vec();

@@ -1,238 +1,190 @@
-# Alpha Programming Language
+<div align="center">
 
-A modern, statically-typed programming language implemented in Rust, adhering strictly to the [syntax.md](syntax.md) specification.
+<img src="https://avatars.githubusercontent.com/u/349414014" width="130" height="130" alt="Alpha Language Logo" style="border-radius: 50%; box-shadow: 0 4px 20px rgba(0,0,0,0.15);" />
 
----
+# The Alpha Programming Language
 
-## Architecture Overview
+**A modern, statically-typed, expressive language with intuitive 1-based indexing, powerful package management, and first-class developer ergonomics.**
 
-Alpha is structured into clean, decoupled, and modular compiler and runtime packages:
+[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)](Cargo.toml)
+[![Build & Tests](https://img.shields.io/badge/tests-43%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
+[![License](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20POSIX-orange.svg?style=for-the-badge)](#)
 
-```
-src/
-├── main.rs                   # CLI executable entry point
-├── lib.rs                    # Root library and public re-exports
-│
-├── diagnostics/              # Error handling and source diagnostics
-│   ├── mod.rs
-│   └── error.rs              # Spans, diagnostic formatting, and caret highlighting
-│
-├── frontend/                 # Lexing, parsing, and AST
-│   ├── mod.rs
-│   ├── token.rs              # Tokens, keywords, and punctuation
-│   ├── lexer.rs              # Tokenizer with line/col tracking
-│   ├── ast.rs                # Abstract Syntax Tree nodes
-│   └── parser.rs             # Pratt & recursive-descent parser
-│
-├── semantics/                # Static analysis and type checking
-│   ├── mod.rs
-│   ├── types.rs              # Type system representations and union compatibility
-│   └── typechecker.rs        # Static type checker and scope verification
-│
-├── runtime/                  # Runtime execution engine and stdlib
-│   ├── mod.rs
-│   ├── value.rs              # Dynamic values (Vect, Map, Io.File, Fs.Dir)
-│   ├── env.rs                # Scoped variable environments
-│   ├── stdlib.rs             # Core library bindings (Basic, Io, Fs, Env)
-│   └── interpreter.rs        # Tree-walking interpreter for `alpha run`
-│
-├── backend/                  # Code generation and native compilation
-│   ├── mod.rs
-│   └── compiler.rs           # Native executable compiler invoking `rustc` (`alpha build`)
-│
-├── driver/                   # Project manager and CLI interface
-│   ├── mod.rs
-│   ├── project.rs            # `alpha-project.toml` manager (`alpha here`)
-│   └── cli.rs                # CLI command dispatcher (`here`, `build`, `run`, `check`)
-│
-└── Core/                     # Standard Core library alpha scripts
-    ├── Basic.alpha
-    ├── Io.alpha
-    ├── Fs.alpha
-    └── Env.alpha
-```
+[Features](#-key-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [CLI Usage](#-cli-commands) • [Documentation](WIKI.md)
+
+</div>
 
 ---
 
-## Language Features
+## 🌟 Key Features
 
-- **Data Types**: `int`, `float`, `string`, `char`, `boolean`, `something`, `nothing`, `vect<T>`, `map<K, V>`.
-- **Union Types**: Return types can specify multiple variants, such as `<int, nothing>` or `<string, int>`.
-- **Variables & Constants**: `var x: int = 10` (mutable) and `const var max: int = 100` (immutable).
-- **Functions**: Visibility and return types are specified in metadata brackets:
-  ```alpha
-  function is_valid?() [public, boolean] {
-      return true
-  }
-
-  function get_score(name: string) [public, <int, nothing>] {
-      if scores.contains(name) {
-          return scores.get(name)
-      } else {
-          return nothing
-      }
-  }
-  ```
-- **Optional Semicolons**: Semicolons `;` at the end of statements are optional.
-- **Loops**:
-  - Infinite: `for { ... }`
-  - Counter: `for i = 0, i < 5, i++ { ... }`
-  - Collection iteration: `for each player in players { ... }`
-  - Map iteration: `for each key, value in scores { ... }`
-- **Nothing Checks**: Universal `.nothing?()` method available on any type.
-- **Error Handling**:
-  - Compiler and runtime errors format with clear diagnostics, line snippets, caret markers, and suggestions:
-    ```
-    Compile Error: Expected ':', found 'int'
-      --> src/main.alpha:1:9
-       |
-       1 | var age int = 25
-         |         ^^^
-       = Hint: Types must be preceded by a colon, e.g. 'var x: int = 10'
-    ```
-  - Catch runtime errors via `try { ... } catch err { ... }` blocks.
-  - Trigger halts via `error("message: {}", val)`.
-- **Core Standard Library**:
-  - `Core/Basic.alpha`: `print()`, `printf()`, `format("{2}:{2}", a, b)`, `error()`.
-  - `Core/Io.alpha`: `Io.open(path)`, `.content()`, `.write()`, `.reset()`, `.something?()`, `.empty?()`, `.linelen()`, `.symlen()`, `.bytelen()`.
-  - `Core/Fs.alpha`: `dir.open(path)`, `dir.create()`, `dir.delete()`, `dir.reset()`, `dir.file.create()`, `dir.get_children()`, `dir.nothing?()`, `dir.empty?()`.
-  - `Core/Env.alpha`: `env.current`, `env.exec_dir`.
-  - `Core/Math.alpha`: `abs(x)`, `max(a, b)`, `min(a, b)`, `clamp(val, min, max)`, `pow(base, exp)`.
+- 🎯 **Intuitive 1-Based Indexing**: Natural element counting for vectors, tuples, strings, and maps (`v[1]` is the first item).
+- 🎨 **First-Class HexColor & Terminal Painting**: Built-in `hexcolor` data type (`#(RRGGBB)`), `paint()` and `cli.paint()`.
+- 📦 **Declarative Web Package Manager**: Remote dependencies are declared in `packages.alpaks` with clean aliases.
+- 🧱 **Object-Oriented Structures & Enums**: Clear `structure` definitions with methods, constructors (`make`), and type-safe `enum` variants.
+- 🗂️ **Modules & Namespaces**: Clean code organization with `module Name { ... }`.
+- ⏳ **Guaranteed Deferred Execution**: LIFO resource cleanups using `make schedule { ... }`.
+- 🛡️ **Robust Error Handling**: Expressive `try ... catch` blocks, `verify` assertions, and actionable diagnostic formatting.
+- ⚡ **Batteries-Included Standard Library**: Core modules for File System (`Fs`), I/O (`Io`), Environment (`Env`), HTTP, JSON, Randomness, Math, and Time.
+- 🖥️ **Conditional Target Compilation**: Cross-platform blocks with `!system win { ... }` and `!system posix { ... }`.
 
 ---
 
-## Creating Custom Core Modules in Alpha
-
-You can create your own custom modules written in Alpha under the `Core/` folder (either `src/Core/` or `Core/` in your project root). Any functions marked `public` become accessible when imported:
+## 🚀 Quick Taste of Alpha
 
 ```alpha
-// src/Core/Crypto.alpha
-function hash_simple(text: string) [public, int] {
-    var h: int = 0
-    for i = 0, i < text.len(), i++ {
-        h = h * 31 + text.get(i)
-    }
-    return h
-}
-
-function internal_helper() [here, nothing] {
-    // 'here' marks this function private to this file
-}
-```
-
-Then simply import and use it anywhere in your Alpha code:
-
-```alpha
-// src/main.alpha
-import Core/Crypto.alpha
 import Core/Basic.alpha
+import Core/Cli.alpha
+
+enum Priority {
+    Low,
+    Medium,
+    High
+}
+
+module GreetingService {
+    function greet(name: string, p: Priority) [public, string] {
+        var badge: string = (p == Priority.High) ? paint("[URGENT]", #(FF0000)) : paint("[NORMAL]", #(00FF66))
+        return format("{} Hello, {}! Welcome to Alpha.", badge, name)
+    }
+}
 
 function main() [public, nothing] {
-    var code: int = hash_simple("Alpha")
-    printf("Hash: {}\n", code)
+    // 1-based CLI arguments
+    var args: vect<string> = cli.arguments()
+    var user: string = (args.len() >= 1) ? args[1] : "Developer"
+
+    // Guaranteed scope cleanup
+    make schedule {
+        print(cli.paint("Execution completed successfully.", #(00FFFF)))
+    }
+
+    var message: string = GreetingService.greet(user, Priority.High)
+    print(message)
 }
 ```
 
 ---
 
-## Showcase Programs (`tests/alpha_programs/`)
+## 📥 Installation
 
-A collection of interesting programs written in Alpha demonstrating various language capabilities:
+Alpha requires the **Rust** toolchain (Rust 2024 edition / 1.85+).
 
-1. [01_math_and_primes.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/01_math_and_primes.alpha):
-   - Fibonacci sequence generation.
-   - Prime number checker with `is_prime?()` syntax.
-   - Core Math functions (`abs`, `max`, `pow`).
-
-2. [02_game_inventory.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/02_game_inventory.alpha):
-   - RPG inventory and merchant system.
-   - Generic vectors `vect<string>` and maps `map<string, int>`.
-   - Functions returning union types `<int, nothing>` with `.nothing?()` validations.
-
-3. [03_file_and_system.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/03_file_and_system.alpha):
-   - File system handling via `Fs.Dir` and `Io.File`.
-   - Timestamp zero-padded formatting (`format("[{2}:{2}:{2}] ...")`).
-   - Line, character, and byte counting, directory traversal and cleanup.
-
-4. [04_error_resilience.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/04_error_resilience.alpha):
-   - Error management using `try { ... } catch err { ... }`.
-   - Safe division and parameter boundary validation with custom halt reporting.
-
-5. [05_task_manager.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/05_task_manager.alpha):
-   - Formatted ASCII table dashboard.
-   - Multi-map task tracking and collection operations.
-
-6. [06_matrix_and_algorithms.alpha](file:///D:/RustProjects/alpha-lang/tests/alpha_programs/06_matrix_and_algorithms.alpha):
-   - In-place Bubble Sort algorithm.
-   - Vector indexing and mutation (`arr.set(j, val)`).
-
-Run any showcase program with:
+### 1. Clone the repository
 ```bash
-cargo run -- tests/alpha_programs/01_math_and_primes.alpha
+git clone https://github.com/your-username/alpha-lang.git
+cd alpha-lang
+```
+
+### 2. Build & Install CLI
+Install the compiler binary directly into your Cargo bin path (`~/.cargo/bin`):
+```bash
+cargo install --path . --force
+```
+
+Verify that the CLI is accessible:
+```bash
+alpha -v
+# Output: Alpha version 0.1.0
+```
+
+### 3. Run the Test Suite
+```bash
+cargo test
+# Runs all 43 automated integration tests across the parser, typechecker, and runtime.
 ```
 
 ---
 
-## Building and Testing
+## 🛠️ Quick Start
 
+### 1. Creating a New Project
+Initialize a fresh project directory using `alpha here`:
 ```bash
-# Build the compiler in release mode
-cargo build --release
-
-# Run the complete test suite (15 unit & integration tests)
-cargo test
-```
-
-### 1. Initialize a Project (`alpha here`)
-Initializes an Alpha project with `alpha-project.toml` and `src/main.alpha`:
-```bash
+mkdir my_project
+cd my_project
 alpha here my_project
 ```
+This generates the standard Alpha project layout:
+```text
+my_project/
+├── alpha-project.toml    # Project metadata (name, version)
+├── packages.alpaks       # Declarative remote web packages
+└── src/
+    └── main.alpha        # Application entry point
+```
 
-### 2. Run Directly (`alpha run`)
-Executes an Alpha project or script using the built-in runtime engine:
+### 2. Managing Dependencies (`packages.alpaks`)
+Remote web libraries cannot be scattered across source files. Instead, declare them in `packages.alpaks` with user-friendly aliases:
+```text
+# packages.alpaks
+"something" = import web::"https://pastebin.com/raw/dC4eYYwH"
+"json_extra" = import web::"https://example.com/alpha-lib/json.alpha"
+```
+
+Then simply import the alias in your source code:
+```alpha
+// src/main.alpha
+import Core/Basic.alpha
+import something
+
+function main() [public, nothing] {
+    print(something())
+}
+```
+
+### 3. Running Your Project
+Run the project in interpreted mode with immediate execution:
 ```bash
-alpha run src/main.alpha
-# or run in project root
 alpha run
 ```
-
-### 3. Native Compilation (`alpha build`)
-Alpha compiles the project into a native executable in the `build/` directory:
+You can also run any standalone `.alpha` file and pass CLI arguments:
 ```bash
-alpha build
-# Produces: build/my_project.exe (on Windows) or build/my_project (on Linux/macOS)
+alpha run src/main.alpha --verbose config.json
+# or simply:
+alpha src/main.alpha
 ```
 
-### 4. Static Verification (`alpha check`)
-Verifies syntax and runs static type checking without executing:
+### 4. Checking Types and Syntax
+Verify syntax and static types without running the program:
 ```bash
+alpha check
+# or
 alpha check src/main.alpha
 ```
 
----
-
-## Editor Support (Zed)
-
-An extension for the [Zed](https://zed.dev) editor is available in [`editors/zed-alpha/`](file:///D:/RustProjects/alpha-lang/editors/zed-alpha/README.md).
-It provides:
-- Full syntax highlighting powered by Tree-sitter.
-- Automatic bracket pairing, quotes, and smart indentation.
-- Outline panel symbol navigation (`Ctrl+Shift+O`).
-
-To install it in Zed:
-1. Open Zed and press `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS).
-2. Run `zed: install dev extension`.
-3. Select the folder `editors/zed-alpha`.
-
----
-
-## Building and Testing
-
+### 5. Compiling to Native Executable
+Compile your project into an optimized native executable (`.exe` on Windows):
 ```bash
-# Build the compiler in debug or release mode
-cargo build --release
-
-# Run the complete test suite (all 15 unit & integration tests)
-cargo test
+alpha build
 ```
+The compiled binary will be placed in the `build/` folder:
+```bash
+./build/my_project.exe
+```
+
+---
+
+## 💻 CLI Commands
+
+| Command | Description |
+| :--- | :--- |
+| `alpha here [name]` | Initialize a new Alpha project in the current directory |
+| `alpha run [file] [args...]` | Execute an Alpha project or script with arguments |
+| `alpha check [file]` | Validate syntax and run static typechecker |
+| `alpha build [file]` | Compile file or project into native binary in `build/` |
+| `alpha -v`, `--version` | Display Alpha compiler and runtime version |
+| `alpha -h`, `--help` | Display CLI help and usage manual |
+
+---
+
+## 📚 Complete Language Manual
+
+For an exhaustive guide covering types, control structures, pattern matching, I/O, file systems, defer, networking, and all standard library modules, read our **[Full WIKI Documentation (English & Russian)](WIKI.md)**.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

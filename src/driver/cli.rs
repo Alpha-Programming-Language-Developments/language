@@ -92,8 +92,18 @@ pub fn run_cli() -> Result<(), AlphaError> {
                 AlphaError::runtime(format!("Failed to get current directory: {}", e), Default::default())
             })?;
 
-            let target_path = if let Some(target) = args.get(2) {
-                PathBuf::from(target)
+            let (target_path, script_args) = if let Some(target) = args.get(2) {
+                if target.ends_with(".alpha") || Path::new(target).exists() {
+                    (PathBuf::from(target), args[3..].to_vec())
+                } else {
+                    let root = find_project_root(&cur_dir).ok_or_else(|| {
+                        AlphaError::runtime(
+                            "No file specified and not in an Alpha project directory.",
+                            Default::default(),
+                        )
+                    })?;
+                    (root.join("src").join("main.alpha"), args[2..].to_vec())
+                }
             } else {
                 let root = find_project_root(&cur_dir).ok_or_else(|| {
                     AlphaError::runtime(
@@ -101,10 +111,10 @@ pub fn run_cli() -> Result<(), AlphaError> {
                         Default::default(),
                     )
                 })?;
-                root.join("src").join("main.alpha")
+                (root.join("src").join("main.alpha"), Vec::new())
             };
 
-            run_file(&target_path)
+            run_file(&target_path, &script_args)
         }
 
         "check" => {
@@ -127,6 +137,11 @@ pub fn run_cli() -> Result<(), AlphaError> {
             check_file(&target_path)
         }
 
+        "-v" | "--version" | "version" => {
+            println!("Alpha version {}", crate::VERSION);
+            Ok(())
+        }
+
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
@@ -136,7 +151,7 @@ pub fn run_cli() -> Result<(), AlphaError> {
             // Check if user passed a file directly: `alpha script.alpha`
             let p = Path::new(unknown);
             if p.exists() && (p.extension().map_or(false, |ext| ext == "alpha") || p.is_file()) {
-                run_file(p)
+                run_file(p, &args[2..])
             } else {
                 eprintln!("[Alpha Error] Unknown command or file: '{}'\n", unknown);
                 print_help();
@@ -146,7 +161,7 @@ pub fn run_cli() -> Result<(), AlphaError> {
     }
 }
 
-fn run_file(path: &Path) -> Result<(), AlphaError> {
+fn run_file(path: &Path, cli_args: &[String]) -> Result<(), AlphaError> {
     if !path.exists() {
         return Err(AlphaError::runtime(
             format!("File not found: {:?}", path),
@@ -159,7 +174,7 @@ fn run_file(path: &Path) -> Result<(), AlphaError> {
     })?;
 
     let file_str = path.to_string_lossy().to_string();
-    let mut interp = Interpreter::new();
+    let mut interp = Interpreter::new().with_cli_args(cli_args.to_vec());
     if let Some(parent) = path.parent() {
         if let Some(root) = find_project_root(parent) {
             interp = interp.with_working_dir(root);
@@ -236,7 +251,7 @@ fn check_file(path: &Path) -> Result<(), AlphaError> {
 
 fn print_help() {
     println!(
-        r#"Alpha Programming Language Compiler & Runtime
+        r#"Alpha Programming Language Compiler & Runtime (v{})
 
 USAGE:
     alpha <COMMAND> [OPTIONS]
@@ -249,11 +264,17 @@ COMMANDS:
     check [file]    Verify syntax and perform static type checking without running
     help            Print this help message
 
+OPTIONS:
+    -v, --version   Print Alpha version
+    -h, --help      Print this help message
+
 EXAMPLES:
     alpha here my_project
     alpha run src/main.alpha
     alpha build
     alpha check
-"#
+    alpha -v
+"#,
+        crate::VERSION
     );
 }

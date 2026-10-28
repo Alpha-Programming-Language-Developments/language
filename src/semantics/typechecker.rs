@@ -33,6 +33,8 @@ pub struct TypeChecker {
     scopes: Vec<Scope>,
     functions: HashMap<String, FuncSignature>,
     pub structures: HashMap<String, StructureDecl>,
+    pub enums: HashMap<String, EnumDecl>,
+    pub modules: HashMap<String, ModuleDecl>,
     current_structure: Option<String>,
     current_return_type: Option<Type>,
     current_file: Option<String>,
@@ -46,6 +48,8 @@ impl TypeChecker {
             scopes: vec![Scope::default()],
             functions: HashMap::new(),
             structures: HashMap::new(),
+            enums: HashMap::new(),
+            modules: HashMap::new(),
             current_structure: None,
             current_return_type: None,
             current_file: None,
@@ -147,6 +151,35 @@ impl TypeChecker {
                 is_const: true,
             },
         );
+        self.scopes[0].symbols.insert(
+            "cli".to_string(),
+            SymbolInfo {
+                ty: Type::Custom("cli".to_string()),
+                is_const: true,
+            },
+        );
+
+        self.functions.insert(
+            "paint".to_string(),
+            FuncSignature {
+                name: "paint".to_string(),
+                params: vec![
+                    Param {
+                        name: "text".to_string(),
+                        ty: Type::Something,
+                        span: Span::default(),
+                    },
+                    Param {
+                        name: "color".to_string(),
+                        ty: Type::HexColor,
+                        span: Span::default(),
+                    },
+                ],
+                visibility: Visibility::Public,
+                return_type: Type::String,
+                defined_in: None,
+            },
+        );
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), AlphaError> {
@@ -155,7 +188,7 @@ impl TypeChecker {
             self.check_import(import)?;
         }
 
-        // 1. Second pass: register all structures
+        // 1. Second pass: register all structures, enums, modules
         for st in &program.structures {
             self.structures.insert(st.name.clone(), st.clone());
             self.scopes[0].symbols.insert(
@@ -167,7 +200,42 @@ impl TypeChecker {
             );
         }
 
-        // Also register structures found in statements
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+            self.scopes[0].symbols.insert(
+                en.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(en.name.clone()),
+                    is_const: true,
+                },
+            );
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            self.scopes[0].symbols.insert(
+                m.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(m.name.clone()),
+                    is_const: true,
+                },
+            );
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname.clone(),
+                    FuncSignature {
+                        name: qname,
+                        params: func.params.clone(),
+                        visibility: func.visibility,
+                        return_type: func.return_type.clone(),
+                        defined_in: self.current_file.clone(),
+                    },
+                );
+            }
+        }
+
+        // Also register structures, enums, modules found in statements
         for stmt in &program.statements {
             if let Statement::Structure(st) = stmt {
                 self.structures.insert(st.name.clone(), st.clone());
@@ -178,6 +246,37 @@ impl TypeChecker {
                         is_const: true,
                     },
                 );
+            } else if let Statement::Enum(en) = stmt {
+                self.enums.insert(en.name.clone(), en.clone());
+                self.scopes[0].symbols.insert(
+                    en.name.clone(),
+                    SymbolInfo {
+                        ty: Type::Custom(en.name.clone()),
+                        is_const: true,
+                    },
+                );
+            } else if let Statement::Module(m) = stmt {
+                self.modules.insert(m.name.clone(), m.clone());
+                self.scopes[0].symbols.insert(
+                    m.name.clone(),
+                    SymbolInfo {
+                        ty: Type::Custom(m.name.clone()),
+                        is_const: true,
+                    },
+                );
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname.clone(),
+                        FuncSignature {
+                            name: qname,
+                            params: func.params.clone(),
+                            visibility: func.visibility,
+                            return_type: func.return_type.clone(),
+                            defined_in: self.current_file.clone(),
+                        },
+                    );
+                }
             }
         }
 
@@ -264,6 +363,27 @@ impl TypeChecker {
             self.current_structure = None;
         }
 
+        // 6. Seventh pass: check module functions
+        let all_modules = self.modules.values().cloned().collect::<Vec<_>>();
+        for m in all_modules {
+            for func in &m.functions {
+                self.enter_scope();
+                self.current_return_type = Some(func.return_type.clone());
+                for param in &func.params {
+                    self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                }
+                self.check_block(&func.body).map_err(|e| {
+                    if let Some(f) = &self.current_file {
+                        e.with_file(f)
+                    } else {
+                        e
+                    }
+                })?;
+                self.current_return_type = None;
+                self.exit_scope();
+            }
+        }
+
         Ok(())
     }
 
@@ -333,6 +453,7 @@ impl TypeChecker {
                         || core_path == "Core/Time.alpha"
                         || core_path == "Core/Http.alpha"
                         || core_path == "Core/Json.alpha"
+                        || core_path == "Core/Cli.alpha"
                     {
                         return Ok(PathBuf::from("__builtin__"));
                     }
@@ -348,47 +469,26 @@ impl TypeChecker {
     }
 
     fn check_import(&mut self, import: &ImportDecl) -> Result<(), AlphaError> {
+        if let ImportTarget::Local(path_str) = &import.target {
+            let candidates = [
+                self.working_dir.join("packages.alpaks"),
+                PathBuf::from("packages.alpaks"),
+            ];
+            for candidate in &candidates {
+                if candidate.exists() {
+                    if let Ok(content) = fs::read_to_string(candidate) {
+                        let map = crate::runtime::stdlib::parse_packages_alpaks(&content);
+                        let raw = path_str.trim_end_matches(".alpha");
+                        if let Some(url) = map.get(path_str).or_else(|| map.get(raw)) {
+                            return self.check_web_module(url, import.span);
+                        }
+                    }
+                }
+            }
+        }
+
         if let ImportTarget::Web(url) = &import.target {
-            if self.loaded_files.contains(url) {
-                return Ok(());
-            }
-            self.loaded_files.insert(url.clone());
-
-            let source = crate::runtime::stdlib::fetch_web_module(url)
-                .map_err(|e| AlphaError::compile(e, import.span))?;
-            let mut lexer = Lexer::new(&source);
-            let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
-            let mut parser = Parser::new(tokens);
-            let program = parser.parse_program().map_err(|e| e.with_file(url))?;
-
-            for st in &program.structures {
-                self.structures.insert(st.name.clone(), st.clone());
-                self.scopes[0].symbols.insert(
-                    st.name.clone(),
-                    SymbolInfo {
-                        ty: Type::Custom(st.name.clone()),
-                        is_const: true,
-                    },
-                );
-            }
-
-            for func in &program.functions {
-                self.functions.insert(
-                    func.name.clone(),
-                    FuncSignature {
-                        name: func.name.clone(),
-                        params: func.params.clone(),
-                        visibility: func.visibility,
-                        return_type: func.return_type.clone(),
-                        defined_in: Some(url.clone()),
-                    },
-                );
-            }
-
-            for stmt in &program.statements {
-                let _ = self.check_statement(stmt);
-            }
-            return Ok(());
+            return self.check_web_module(url, import.span);
         }
 
         let path = self.resolve_import_path(&import.target)?;
@@ -461,6 +561,88 @@ impl TypeChecker {
 
     fn exit_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    fn check_web_module(&mut self, url: &str, span: Span) -> Result<(), AlphaError> {
+        if self.loaded_files.contains(url) {
+            return Ok(());
+        }
+        self.loaded_files.insert(url.to_string());
+
+        let source = crate::runtime::stdlib::fetch_web_module(url)
+            .map_err(|e| AlphaError::compile(e, span))?;
+        let mut lexer = Lexer::new(&source);
+        let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse_program().map_err(|e| e.with_file(url))?;
+
+        for sub_import in &program.imports {
+            self.check_import(sub_import)?;
+        }
+
+        for st in &program.structures {
+            self.structures.insert(st.name.clone(), st.clone());
+            self.scopes[0].symbols.insert(
+                st.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(st.name.clone()),
+                    is_const: true,
+                },
+            );
+        }
+
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+            self.scopes[0].symbols.insert(
+                en.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(en.name.clone()),
+                    is_const: true,
+                },
+            );
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            self.scopes[0].symbols.insert(
+                m.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(m.name.clone()),
+                    is_const: true,
+                },
+            );
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname.clone(),
+                    FuncSignature {
+                        name: qname,
+                        params: func.params.clone(),
+                        visibility: func.visibility,
+                        return_type: func.return_type.clone(),
+                        defined_in: Some(url.to_string()),
+                    },
+                );
+            }
+        }
+
+        for func in &program.functions {
+            self.functions.insert(
+                func.name.clone(),
+                FuncSignature {
+                    name: func.name.clone(),
+                    params: func.params.clone(),
+                    visibility: func.visibility,
+                    return_type: func.return_type.clone(),
+                    defined_in: Some(url.to_string()),
+                },
+            );
+        }
+
+        for stmt in &program.statements {
+            let _ = self.check_statement(stmt);
+        }
+        Ok(())
     }
 
     fn declare_variable(
@@ -961,6 +1143,43 @@ impl TypeChecker {
                 }
                 Ok(())
             }
+
+            Statement::Enum(en) => {
+                self.enums.insert(en.name.clone(), en.clone());
+                if self.lookup_variable(&en.name).is_none() {
+                    self.declare_variable(&en.name, Type::Custom(en.name.clone()), true, en.span)?;
+                }
+                Ok(())
+            }
+
+            Statement::Module(m) => {
+                self.modules.insert(m.name.clone(), m.clone());
+                if self.lookup_variable(&m.name).is_none() {
+                    self.declare_variable(&m.name, Type::Custom(m.name.clone()), true, m.span)?;
+                }
+                for func in &m.functions {
+                    let qname = format!("{}.{}", m.name, func.name);
+                    self.functions.insert(
+                        qname.clone(),
+                        FuncSignature {
+                            name: qname,
+                            params: func.params.clone(),
+                            visibility: func.visibility,
+                            return_type: func.return_type.clone(),
+                            defined_in: self.current_file.clone(),
+                        },
+                    );
+                    self.enter_scope();
+                    self.current_return_type = Some(func.return_type.clone());
+                    for param in &func.params {
+                        self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                    }
+                    self.check_block(&func.body)?;
+                    self.current_return_type = None;
+                    self.exit_scope();
+                }
+                Ok(())
+            }
         }
     }
 
@@ -1356,17 +1575,50 @@ impl TypeChecker {
                                 "join" => Ok(Type::String),
                                 _ => Ok(Type::Something),
                             }
+                        } else if custom_name == "cli" {
+                            for a in args {
+                                self.check_expr(a)?;
+                            }
+                            match method.as_str() {
+                                "arguments" => Ok(Type::Vect(Box::new(Type::String))),
+                                "paint" => Ok(Type::String),
+                                _ => Ok(Type::Something),
+                            }
                         } else {
-                            Ok(Type::Something)
+                            let qname = format!("{}.{}", custom_name, method);
+                            if let Some(func) = self.functions.get(&qname).cloned() {
+                                if func.visibility == Visibility::Here && func.defined_in != self.current_file {
+                                    return Err(AlphaError::type_error(
+                                        format!("Cannot call private 'here' function '{}' from outside its file", qname),
+                                        *span,
+                                    ));
+                                }
+                                for a in args {
+                                    self.check_expr(a)?;
+                                }
+                                Ok(func.return_type)
+                            } else {
+                                Ok(Type::Something)
+                            }
                         }
                     }
                     _ => Ok(Type::Something),
                 }
             }
 
-            Expr::MemberAccess { object, member, .. } => {
+            Expr::MemberAccess { object, member, span } => {
                 let obj_ty = self.check_expr(object)?;
                 if let Type::Custom(name) = &obj_ty {
+                    if let Some(en) = self.enums.get(name) {
+                        if en.variants.contains(member) {
+                            return Ok(Type::Custom(name.clone()));
+                        } else {
+                            return Err(AlphaError::type_error(
+                                format!("Variant '{}' not found in enum '{}'", member, name),
+                                *span,
+                            ));
+                        }
+                    }
                     if let Some(st) = self.structures.get(name) {
                         if let Some((_, f_ty)) = st.fields.iter().find(|(n, _)| n == member) {
                             return Ok(f_ty.clone());
@@ -1392,11 +1644,11 @@ impl TypeChecker {
                     Type::Tuple(elements) => {
                         if let Expr::Literal(LiteralValue::Int(idx), _) = index.as_ref() {
                             let idx = *idx as usize;
-                            if idx < elements.len() {
-                                Ok(elements[idx].clone())
+                            if idx >= 1 && idx <= elements.len() {
+                                Ok(elements[idx - 1].clone())
                             } else {
                                 Err(AlphaError::type_error(
-                                    format!("Tuple index {} is out of bounds (len {})", idx, elements.len()),
+                                    format!("Tuple index {} is out of bounds (1-based, size {})", idx, elements.len()),
                                     *span,
                                 ))
                             }
@@ -1407,6 +1659,8 @@ impl TypeChecker {
                     _ => Ok(Type::Something),
                 }
             }
+
+            Expr::HexColor(_, _) => Ok(Type::HexColor),
 
             Expr::InterpolatedString(_, _)
             | Expr::MultilineString(_, _)

@@ -829,3 +829,130 @@ function check_player(name: string, score: int) [public, nothing] {
 }
 ```
 Если сообщение об ошибке опущено (`verify condition`), используется стандартное сообщение об ошибке утверждения.
+
+---
+
+## 18. Новые возможности языка (Enums, HexColor, Core/Cli, Модули, 1-based Indexing, Packages.alpaks)
+
+### 18.1 Индексация с единицы (1-based Indexing)
+Счёт элементов во всех коллекциях (**vect**, **tuple**, **string**, а также позиционный/целочисленный доступ в **map**) начинается с **единицы** (`1`):
+
+```alpha
+var v: vect<string> = vect.new()
+v.push("first")
+v.push("second")
+v.push("third")
+
+print(v[1]) // "first"
+print(v[2]) // "second"
+print(v[3]) // "third"
+
+v[2] = "updated" // Запись по 1-based индексу
+```
+
+Срезы также отталкиваются от 1-based позиций:
+```alpha
+var s: string = "hello world"
+var part: string = s[1..6]    // "hello" (символы с 1 по 5 включительно)
+var tail: string = s[7...]    // "world" (символы с 7 до конца)
+```
+
+### 18.2 Перечисления (`enum`)
+Синтаксис объявления `enum`:
+```alpha
+enum Status {
+    Pending,
+    Active,
+    Done
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+```
+
+Использование вариантов enum:
+```alpha
+var s: Status = Status.Active
+
+if s == Status.Active {
+    print("Статус активен!")
+}
+```
+
+### 18.3 Тип `hexcolor` и окрашивание вывода
+Alpha имеет встроенный тип данных `hexcolor`, представляющий HEX-код цвета в формате `#(RRGGBB)` или `#(RGB)`:
+
+```alpha
+var color: hexcolor = #(FFF00)
+var red: hexcolor = #(FF0000)
+var cyan: hexcolor = #(00FFFF)
+```
+
+Функция `paint(text, hexcolor)` или метод `cli.paint(text, hexcolor)` окрашивают текст с использованием 24-битных ANSI escape-кодов для терминала:
+```alpha
+var title: string = paint("Alpha Engine", #(00FF66))
+print(title)
+```
+
+### 18.4 Модуль `Core/Cli.alpha` и аргументы командной строки
+Модуль `Core/Cli.alpha` предоставляет средства для работы с терминалом и CLI аргументами:
+
+```alpha
+import Core/Cli.alpha
+
+function main() [public, nothing] {
+    // Получение аргументов запуска (индексация с 1)
+    var arguments: vect<string> = cli.arguments()
+
+    if arguments.len() > 0 {
+        printf("Первый аргумент: {}\n", arguments[1])
+    }
+
+    // Кастомный вывод в цвет терминала
+    var banner: string = cli.paint(">>> SUCCESS <<<", #(00FF00))
+    print(banner)
+}
+```
+
+### 18.5 Пространства имён (`module`)
+Синтаксис объявления модулей/неймспейсов:
+```alpha
+module MathTools {
+    function add(a: int, b: int) [public, int] {
+        return a + b
+    }
+
+    function square(n: int) [public, int] {
+        return n * n
+    }
+}
+```
+
+Вызов функций модуля происходит через точку:
+```alpha
+var result: int = MathTools.add(10, 20)
+var squared: int = MathTools.square(5)
+```
+
+### 18.6 Управление веб-библиотеками (`packages.alpaks`)
+Начиная с этой версии, прямые импорты по URL (`import web::"..."`) в исходных файлах `.alpha` запрещены.
+Все веб-библиотеки подключаются исключительно в корневом файле проекта **`packages.alpaks`**:
+
+Синтаксис `packages.alpaks`:
+```text
+"alias" = import web::"https://pastebin.com/raw/..."
+"toml" = import web::"https://example.com/alpha-toml/module.alpha"
+"something" = import web::"https://pastebin.com/raw/dC4eYYwH"
+```
+
+После этого в любом `.alpha` файле проекта библиотека импортируется по присвоенному алиасу:
+```alpha
+import something
+// или:
+import toml
+```
+При создании нового проекта (`alpha here`) файл `packages.alpaks` генерируется автоматически.
+

@@ -157,9 +157,9 @@ impl Parser {
         let mut path_str = String::new();
         let mut last_span = start_span;
 
-        if let TokenKind::StringLit(s) = &self.peek().kind {
+        if let TokenKind::StringLit(s) = self.peek().kind.clone() {
             let tok = self.advance();
-            path_str = s.clone();
+            path_str = s;
             last_span = tok.span;
         } else if self.match_token(&TokenKind::LParen) {
             // (file_name).alpha
@@ -183,9 +183,22 @@ impl Parser {
                     | TokenKind::Slash
                     | TokenKind::Dot
                     | TokenKind::Minus
+                    | TokenKind::Schedule
+                    | TokenKind::Verify
+                    | TokenKind::System
+                    | TokenKind::Enum
+                    | TokenKind::Module
+                    | TokenKind::Nothing
                     | TokenKind::TypeInt
                     | TokenKind::TypeFloat
-                    | TokenKind::TypeString => {
+                    | TokenKind::TypeString
+                    | TokenKind::TypeChar
+                    | TokenKind::TypeBoolean
+                    | TokenKind::TypeHexColor
+                    | TokenKind::TypeSomething
+                    | TokenKind::TypeNothing
+                    | TokenKind::TypeVect
+                    | TokenKind::TypeMap => {
                         let t = self.advance();
                         path_str.push_str(&t.text);
                         last_span = t.span;
@@ -1573,12 +1586,15 @@ impl Parser {
             | TokenKind::Schedule
             | TokenKind::Verify
             | TokenKind::System
+            | TokenKind::Enum
+            | TokenKind::Module
             | TokenKind::Nothing
             | TokenKind::TypeInt
             | TokenKind::TypeFloat
             | TokenKind::TypeString
             | TokenKind::TypeChar
             | TokenKind::TypeBoolean
+            | TokenKind::TypeHexColor
             | TokenKind::TypeSomething
             | TokenKind::TypeNothing
             | TokenKind::TypeVect

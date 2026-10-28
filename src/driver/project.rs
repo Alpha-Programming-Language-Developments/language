@@ -75,8 +75,20 @@ pub fn init_project(target_dir: &Path, project_name: Option<String>) -> Result<(
         })?;
     }
 
+    let packages_path = target_dir.join("packages.alpaks");
+    if !packages_path.exists() {
+        let template = "# packages.alpaks\n# Define remote web packages here:\n# \"alias\" = import web::\"url\"\n";
+        fs::write(&packages_path, template).map_err(|e| {
+            AlphaError::runtime(
+                format!("Failed to create packages.alpaks: {}", e),
+                Span::default(),
+            )
+        })?;
+    }
+
     println!("[Alpha] Initialized project '{}' successfully.", name);
     println!("  - Created: alpha-project.toml");
+    println!("  - Created: packages.alpaks");
     println!("  - Created: src/main.alpha");
     Ok(())
 }
