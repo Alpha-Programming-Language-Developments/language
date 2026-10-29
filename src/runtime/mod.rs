@@ -3,8 +3,10 @@ pub mod env;
 pub mod interpreter;
 pub mod stdlib;
 pub mod value;
+pub mod webview;
 
 pub use env::Environment;
 pub use interpreter::Interpreter;
 pub use stdlib::{call_fs_dir_method, call_io_file_method, format_alpha_string};
 pub use value::{FsDirHandle, IoFileHandle, Value, ValueKey};
+pub use webview::WebviewWindowConfig;

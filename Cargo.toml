@@ -8,6 +8,8 @@ default-run = "alpha"
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+wry = "0.57.1"
+tao = "0.37.2"
 
 [[bin]]
 name = "alpha"

@@ -600,6 +600,38 @@ impl TypeChecker {
 
             }
 
+            "Core/Webview.alpha" => {
+
+                self.scopes[0].symbols.insert(
+
+                    "webview".to_string(),
+
+                    SymbolInfo {
+
+                        ty: Type::Custom("webview".to_string()),
+
+                        is_const: true,
+
+                    },
+
+                );
+
+                self.scopes[0].symbols.insert(
+
+                    "Webview".to_string(),
+
+                    SymbolInfo {
+
+                        ty: Type::Custom("webview".to_string()),
+
+                        is_const: true,
+
+                    },
+
+                );
+
+            }
+
             _ => {}
 
         }
@@ -1086,6 +1118,58 @@ impl TypeChecker {
 
                 let candidate3 = self.working_dir.join("src").join(path_str);
 
+                let candidate4 = if let Some(cur) = &self.current_file {
+
+                    let parent = Path::new(cur).parent().unwrap_or(Path::new(""));
+
+                    if parent.file_name().and_then(|n| n.to_str()) == Some("src") {
+
+                        parent.parent().unwrap_or(parent).join(path_str)
+
+                    } else {
+
+                        PathBuf::new()
+
+                    }
+
+                } else {
+
+                    PathBuf::new()
+
+                };
+
+                let candidate5 = if let Some(cur) = &self.current_file {
+
+                    let mut dir = Path::new(cur).parent().unwrap_or(Path::new("")).to_path_buf();
+
+                    let mut root = PathBuf::new();
+
+                    loop {
+
+                        if dir.join("alpha-project.toml").exists() {
+
+                            root = dir.join(path_str);
+
+                            break;
+
+                        }
+
+                        if !dir.pop() {
+
+                            break;
+
+                        }
+
+                    }
+
+                    root
+
+                } else {
+
+                    PathBuf::new()
+
+                };
+
 
 
                 if candidate1.exists() {
@@ -1099,6 +1183,14 @@ impl TypeChecker {
                 } else if candidate3.exists() {
 
                     Ok(candidate3)
+
+                } else if candidate4.exists() {
+
+                    Ok(candidate4)
+
+                } else if candidate5.exists() {
+
+                    Ok(candidate5)
 
                 } else {
 
@@ -1178,27 +1270,31 @@ impl TypeChecker {
 
                 } else {
 
-                    if core_path == "Core/Basic.alpha"
+                    let norm = Self::normalize_core_name(core_path);
 
-                        || core_path == "Core/Io.alpha"
+                    if norm == "Core/Basic.alpha"
 
-                        || core_path == "Core/Fs.alpha"
+                        || norm == "Core/Io.alpha"
 
-                        || core_path == "Core/Env.alpha"
+                        || norm == "Core/Fs.alpha"
 
-                        || core_path == "Core/Math.alpha"
+                        || norm == "Core/Env.alpha"
 
-                        || core_path == "Core/Machine.alpha"
+                        || norm == "Core/Math.alpha"
 
-                        || core_path == "Core/Random.alpha"
+                        || norm == "Core/Machine.alpha"
 
-                        || core_path == "Core/Time.alpha"
+                        || norm == "Core/Random.alpha"
 
-                        || core_path == "Core/Http.alpha"
+                        || norm == "Core/Time.alpha"
 
-                        || core_path == "Core/Json.alpha"
+                        || norm == "Core/Http.alpha"
 
-                        || core_path == "Core/Cli.alpha"
+                        || norm == "Core/Json.alpha"
+
+                        || norm == "Core/Webview.alpha"
+
+                        || norm == "Core/Cli.alpha"
 
                     {
 
@@ -2840,6 +2936,8 @@ impl TypeChecker {
 
                         "json" | "Json" => Some("Add 'import Core/Json.alpha' at the top of the file"),
 
+                        "webview" | "Webview" => Some("Add 'import Core/Webview.alpha' at the top of the file"),
+
                         _ => None,
 
                     };
@@ -3561,6 +3659,28 @@ impl TypeChecker {
                                 "parse" => Ok(Type::Something),
 
                                 "stringify" => Ok(Type::String),
+
+                                _ => Ok(Type::Something),
+
+                            };
+
+                        } else if custom_name == "webview" || custom_name == "Webview" {
+
+                            for a in args {
+
+                                self.check_expr(a)?;
+
+                            }
+
+                            return match method.as_str() {
+
+                                "open" => Ok(Type::Nothing),
+
+                                "on_message" => Ok(Type::Nothing),
+
+                                "eval" => Ok(Type::Nothing),
+
+                                "run" => Ok(Type::Nothing),
 
                                 _ => Ok(Type::Something),
 

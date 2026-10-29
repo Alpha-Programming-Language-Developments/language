@@ -16,6 +16,8 @@ use crate::runtime::stdlib::{call_fs_dir_method, call_io_file_method, execute_co
 
 use crate::runtime::value::{FsDirHandle, IoFileHandle, StructureInstance, Value, ValueKey};
 
+use crate::runtime::webview::WebviewWindowConfig;
+
 use crate::semantics::types::Type;
 
 use std::cell::RefCell;
@@ -86,6 +88,12 @@ pub struct Interpreter {
 
     pub imported_core: HashSet<String>,
 
+    pub webview_config: WebviewWindowConfig,
+
+    pub webview_on_message: Option<FunctionDecl>,
+
+    pub webview_pending_evals: Rc<RefCell<Vec<String>>>,
+
 }
 
 
@@ -121,6 +129,12 @@ impl Interpreter {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
 
             imported_core: HashSet::new(),
+
+            webview_config: WebviewWindowConfig::default(),
+
+            webview_on_message: None,
+
+            webview_pending_evals: Rc::new(RefCell::new(Vec::new())),
 
         };
 
@@ -297,6 +311,14 @@ impl Interpreter {
                 self.env.define("json", Value::BuiltinNamespace("json".to_string()), true);
 
                 self.env.define("Json", Value::BuiltinNamespace("json".to_string()), true);
+
+            }
+
+            "Core/Webview.alpha" => {
+
+                self.env.define("Webview", Value::BuiltinNamespace("Webview".to_string()), true);
+
+                self.env.define("webview", Value::BuiltinNamespace("Webview".to_string()), true);
 
             }
 
@@ -682,6 +704,8 @@ impl Interpreter {
 
                         && norm != "Core/Json.alpha"
 
+                        && norm != "Core/Webview.alpha"
+
                         && norm != "Core/Cli.alpha"
 
                     {
@@ -734,9 +758,63 @@ impl Interpreter {
 
                     let candidate = Path::new(cur).parent().unwrap_or(Path::new("")).join(path_str);
 
+                    let candidate_up = {
+
+                        let parent = Path::new(cur).parent().unwrap_or(Path::new(""));
+
+                        if parent.file_name().and_then(|n| n.to_str()) == Some("src") {
+
+                            parent.parent().unwrap_or(parent).join(path_str)
+
+                        } else {
+
+                            PathBuf::new()
+
+                        }
+
+                    };
+
+                    let candidate_root = {
+
+                        let mut dir = Path::new(cur).parent().unwrap_or(Path::new("")).to_path_buf();
+
+                        let mut root = PathBuf::new();
+
+                        loop {
+
+                            if dir.join("alpha-project.toml").exists() {
+
+                                root = dir.join(path_str);
+
+                                break;
+
+                            }
+
+                            if !dir.pop() {
+
+                                break;
+
+                            }
+
+                        }
+
+                        root
+
+                    };
+
+
+
                     if candidate.exists() {
 
                         candidate
+
+                    } else if candidate_up.exists() {
+
+                        candidate_up
+
+                    } else if candidate_root.exists() {
+
+                        candidate_root
 
                     } else if self.working_dir.join(path_str).exists() {
 
@@ -2494,6 +2572,8 @@ impl Interpreter {
 
                         "json" | "Json" => Some("Add 'import Core/Json.alpha' at the top of the file"),
 
+                        "webview" | "Webview" => Some("Add 'import Core/Webview.alpha' at the top of the file"),
+
                         _ => None,
 
                     };
@@ -3838,6 +3918,168 @@ impl Interpreter {
 
                             }
 
+                        } else if name == "Webview" || name == "webview" {
+
+                            match method.as_str() {
+
+                                "open" => {
+
+                                    let mut cfg = WebviewWindowConfig::default();
+
+                                    if let Some(arg) = evaluated_args.get(0) {
+
+                                        match arg {
+
+                                            Value::Map(m) => {
+
+                                                let map = m.borrow();
+
+                                                for (k, v) in map.iter() {
+
+                                                    if let ValueKey::String(key_str) = k {
+
+                                                        match key_str.as_str() {
+
+                                                            "title" => cfg.title = v.to_string(),
+
+                                                            "width" => if let Some(n) = v.as_int() { cfg.width = n.max(100) as u32; },
+
+                                                            "height" => if let Some(n) = v.as_int() { cfg.height = n.max(100) as u32; },
+
+                                                            "resizable" => if let Value::Boolean(b) = v { cfg.resizable = *b; },
+
+                                                            "html" => cfg.html = Some(v.to_string()),
+
+                                                            "url" => cfg.url = Some(v.to_string()),
+
+                                                            _ => {}
+
+                                                        }
+
+                                                    }
+
+                                                }
+
+                                            }
+
+                                            Value::StructureInstance(inst) => {
+
+                                                let fields = inst.fields.borrow();
+
+                                                for (k, v) in fields.iter() {
+
+                                                    match k.as_str() {
+
+                                                        "title" => cfg.title = v.to_string(),
+
+                                                        "width" => if let Some(n) = v.as_int() { cfg.width = n.max(100) as u32; },
+
+                                                        "height" => if let Some(n) = v.as_int() { cfg.height = n.max(100) as u32; },
+
+                                                        "resizable" => if let Value::Boolean(b) = v { cfg.resizable = *b; },
+
+                                                        "html" => cfg.html = Some(v.to_string()),
+
+                                                        "url" => cfg.url = Some(v.to_string()),
+
+                                                        _ => {}
+
+                                                    }
+
+                                                }
+
+                                            }
+
+                                            _ => {}
+
+                                        }
+
+                                    }
+
+                                    if let Some(ref u) = cfg.url {
+
+                                        let is_remote = u.starts_with("http://") || u.starts_with("https://");
+
+                                        if !is_remote {
+
+                                            let candidate = self.working_dir.join(u);
+
+                                            if candidate.is_file() {
+
+                                                if let Ok(content) = std::fs::read_to_string(&candidate) {
+
+                                                    cfg.html = Some(content);
+
+                                                }
+
+                                            }
+
+                                        }
+
+                                    }
+
+                                    self.webview_config = cfg;
+
+                                    Ok(Value::Nothing)
+
+                                }
+
+                                "on_message" => {
+
+                                    if evaluated_args.is_empty() {
+
+                                        return Err(AlphaError::runtime("Webview.on_message requires callback function", *span));
+
+                                    }
+
+                                    match &evaluated_args[0] {
+
+                                        Value::Function(func) => {
+
+                                            self.webview_on_message = Some(func.clone());
+
+                                            Ok(Value::Nothing)
+
+                                        }
+
+                                        other => Err(AlphaError::runtime(
+
+                                            format!("Webview.on_message expects function, got '{}'", other.type_name()),
+
+                                            *span,
+
+                                        )),
+
+                                    }
+
+                                }
+
+                                "eval" => {
+
+                                    if evaluated_args.is_empty() {
+
+                                        return Err(AlphaError::runtime("Webview.eval requires script string argument", *span));
+
+                                    }
+
+                                    let script = evaluated_args[0].to_string();
+
+                                    self.webview_pending_evals.borrow_mut().push(script);
+
+                                    Ok(Value::Nothing)
+
+                                }
+
+                                "run" => {
+
+                                    crate::runtime::webview::run_webview_loop(self, *span)
+
+                                }
+
+                                _ => Err(AlphaError::runtime(format!("Unknown method '{}' on Webview", method), *span)),
+
+                            }
+
                         } else if name.starts_with("module:") {
 
                             let mod_name = &name["module:".len()..];
@@ -4902,7 +5144,7 @@ impl Interpreter {
 
 
 
-    fn call_function(
+    pub(crate) fn call_function(
 
         &mut self,
 

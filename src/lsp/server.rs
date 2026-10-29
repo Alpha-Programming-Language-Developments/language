@@ -698,6 +698,30 @@ impl LspServer {
                         }
                     }
                 }
+                ImportTarget::Core(core_path) => {
+                    let mut text_opt = None;
+                    if let Some(parent) = parent_dir {
+                        let candidates = [
+                            parent.join(core_path),
+                            parent.join("src").join(core_path),
+                            parent.join("..").join("src").join(core_path),
+                            parent.join("..").join("..").join("src").join(core_path),
+                        ];
+                        for cand in &candidates {
+                            if cand.is_file() {
+                                if let Ok(c) = fs::read_to_string(cand) {
+                                    text_opt = Some(c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if let Some(src) = text_opt {
+                        if let Some(p) = parse_program_safely(&src) {
+                            imported.push(p);
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -743,6 +767,7 @@ impl LspServer {
                 "Core/Random.alpha",
                 "Core/Http.alpha",
                 "Core/Json.alpha",
+                "Core/Webview.alpha",
             ];
             for m in core_modules {
                 import_items.push(json!({
@@ -894,17 +919,20 @@ impl LspServer {
         }
 
         // C. Standard Core Library Functions
-        for func_item in get_builtin_core_functions() {
-            push_item(func_item);
+        for name in &["print", "printf", "format", "error"] {
+            push_item(json!({
+                "label": *name,
+                "kind": 3, // Function
+                "detail": "function"
+            }));
         }
 
         // D. Core Namespaces
-        let core_mods = ["Time", "Io", "Fs", "Math", "Env", "Cli", "Machine", "Random", "Http", "Json"];
-        for m in core_mods {
+        for m in &["Time", "Io", "Fs", "Math", "Env", "Cli", "Machine", "Random", "Http", "Json", "Webview"] {
             push_item(json!({
-                "label": m,
+                "label": *m,
                 "kind": 9, // Module
-                "detail": "Alpha Standard Module"
+                "detail": "module"
             }));
         }
 
@@ -1021,29 +1049,31 @@ impl LspServer {
 
         // 2. Builtin Language Keywords, Directives, and Core Modules
         let hover_text = match word.as_str() {
-            "@strict" => "### `@strict` Directive\n\nEnforces strict, production-grade typing rules:\n- Box / union types **must** be unpacked via `check`; force unwrap (`!?`) is prohibited.\n- Every variable must have an explicit type annotation.\n- Types and values `something` and `nothing` are strictly forbidden.",
-            "unt" => "### `unt` Type\n\n64-bit unsigned integer (`0` to `18_446_744_073_709_551_615`). Cannot be negative.",
-            "int" => "### `int` Type\n\n64-bit signed integer (`-9_223_372_036_854_775_808` to `9_223_372_036_854_775_807`).",
-            "float" => "### `float` Type\n\n64-bit IEEE-754 double precision floating point number.",
-            "string" => "### `string` Type\n\nUTF-8 encoded dynamic string with 1-based indexing and slice support.",
-            "hexcolor" => "### `hexcolor` Type\n\n6-digit hexadecimal color literal (`#RRGGBB`).",
-            "make schedule" | "schedule" => "### `make schedule { ... }`\n\nGuarantees LIFO (last-in, first-out) deferred execution before exiting the current scope. Ideal for cleanups, closing handles, and rollbacks.",
-            "check" => "### `check` Pattern Matching\n\nExhaustively matches values and safely unpacks box/union values without runtime panics.",
-            "Time.benchmark" | "benchmark" => "### `Time.benchmark({ ... }) -> int`\n\nMeasures execution duration in milliseconds.\nRequires `import Core/Time.alpha`.",
-            "Time" | "time" => "### `Time` Core Module\n\nProvides clock, timers, sleep, and benchmarking.\nImport via `import Core/Time.alpha`.",
-            "Io" => "### `Io` Core Module\n\nFile and stream input/output primitives.\nImport via `import Core/Io.alpha`.",
-            "Fs" => "### `Fs` Core Module\n\nFilesystem path manipulation and directory navigation (`Fs.Dir`, `dir`).\nImport via `import Core/Fs.alpha`.",
-            "Math" | "math" => "### `Math` Core Module\n\nMath functions (`min`, `max`, `abs`, `clamp`, `pow`, `sqr`).\nImport via `import Core/Math.alpha`.",
-            "Env" | "env" => "### `Env` Core Module\n\nEnvironment variables and system directories.\nImport via `import Core/Env.alpha`.",
-            "Cli" | "cli" => "### `Cli` Core Module\n\nCLI arguments and colored text output (`cli.arguments()`, `cli.paint()`).\nImport via `import Core/Cli.alpha`.",
-            "Machine" | "console" => "### `Machine` Core Module\n\nConsole and low-level system commands (`console.out()`).\nImport via `import Core/Machine.alpha`.",
-            "Random" | "random" => "### `Random` Core Module\n\nRandom integers, floats, booleans, and vector selection.\nImport via `import Core/Random.alpha`.",
-            "Http" | "http" => "### `Http` Core Module\n\nHTTP client for web requests.\nImport via `import Core/Http.alpha`.",
-            "Json" | "json" => "### `Json` Core Module\n\nJSON parsing and serialization.\nImport via `import Core/Json.alpha`.",
-            "print" => "### `print(value)`\n\nOutputs value to stdout.\nRequires `import Core/Basic.alpha`.",
-            "printf" => "### `printf(fmt, ...args)`\n\nOutputs formatted string with `{}` placeholders.\nRequires `import Core/Basic.alpha`.",
-            "format" => "### `format(fmt, ...args) -> string`\n\nFormats string with placeholders and optional width padding (e.g. `{2}`).\nRequires `import Core/Basic.alpha`.",
-            "error" => "### `error(message)`\n\nHalts execution immediately with an explicit error.\nRequires `import Core/Basic.alpha`.",
+            "unt" => "64-bit unsigned integer (`unt`)",
+            "int" => "64-bit signed integer (`int`)",
+            "float" => "64-bit float (`float`)",
+            "string" => "string",
+            "char" => "char",
+            "boolean" => "boolean",
+            "hexcolor" => "hexcolor (`#(RRGGBB)`)",
+            "@strict" => "@strict",
+            "make schedule" | "schedule" => "make schedule { ... }",
+            "check" => "check pattern matching",
+            "Time" | "time" => "module Time",
+            "Io" | "io" => "module Io",
+            "Fs" | "fs" => "module Fs",
+            "Math" | "math" => "module Math",
+            "Env" | "env" => "module Env",
+            "Cli" | "cli" => "module Cli",
+            "Machine" | "console" => "module Machine",
+            "Random" | "random" => "module Random",
+            "Http" | "http" => "module Http",
+            "Json" | "json" => "module Json",
+            "Webview" | "webview" => "module Webview",
+            "print" => "function print(value: something) -> nothing",
+            "printf" => "function printf(fmt: string, ...args) -> nothing",
+            "format" => "function format(fmt: string, ...args) -> string",
+            "error" => "function error(message: string) -> nothing",
             _ => return json!(null),
         };
 
@@ -1079,9 +1109,18 @@ pub fn validate_alpha_code_with_file(source: &str, file_name: Option<&Path>) -> 
 
     let mut typechecker = TypeChecker::new();
     if let Some(f) = file_name {
-        if let Some(parent) = f.parent() {
-            typechecker = typechecker.with_working_dir(parent.to_path_buf());
-        }
+        let work_dir = if let Some(parent) = f.parent() {
+            crate::driver::project::find_project_root(parent).unwrap_or_else(|| {
+                if parent.file_name().and_then(|n| n.to_str()) == Some("src") {
+                    parent.parent().unwrap_or(parent).to_path_buf()
+                } else {
+                    parent.to_path_buf()
+                }
+            })
+        } else {
+            std::path::PathBuf::from(".")
+        };
+        typechecker = typechecker.with_working_dir(work_dir);
         typechecker = typechecker.with_file(f.to_string_lossy().to_string());
     }
 
@@ -1233,209 +1272,101 @@ fn method_to_completion(method: &AttachedMethod, struct_name: &str) -> Value {
     })
 }
 
-fn core_func(name: &str, params: &[(&str, &str)], return_type: &str) -> Value {
-    let params_sig: Vec<String> = params.iter().map(|(p, t)| {
-        if t.is_empty() { p.to_string() } else { format!("{}: {}", p, t) }
-    }).collect();
-    let detail = format!("{}({}) -> {}", name, params_sig.join(", "), return_type);
-    let insert_text = if params.is_empty() {
-        format!("{}()", name)
-    } else {
-        let snippet_args: Vec<String> = params.iter().enumerate().map(|(i, (p, _))| {
-            format!("${{{}:{}}}", i + 1, p)
-        }).collect();
-        format!("{}({})", name, snippet_args.join(", "))
-    };
-
-    json!({
-        "label": name,
-        "kind": 3, // Function
-        "detail": detail,
-        "insertText": insert_text,
-        "insertTextFormat": 2
-    })
-}
-
-fn get_builtin_core_functions() -> Vec<Value> {
-    vec![
-        // Basic
-        core_func("print", &[("value", "something")], "nothing"),
-        core_func("printf", &[("fmt", "string"), ("...args", "")], "nothing"),
-        core_func("format", &[("fmt", "string"), ("...args", "")], "string"),
-        core_func("error", &[("message", "string")], "nothing"),
-        // Time
-        json!({
-            "label": "Time.benchmark",
-            "kind": 3,
-            "detail": "Time.benchmark({ ... }) -> int",
-            "insertText": "Time.benchmark({\n\t$0\n})",
-            "insertTextFormat": 2
-        }),
-        core_func("Time.now", &[], "int"),
-        core_func("Time.now_ms", &[], "int"),
-        core_func("Time.sleep", &[("ms", "int")], "nothing"),
-        core_func("Time.elapsed", &[("start_ms", "int")], "int"),
-        // Io
-        core_func("Io.open", &[("path", "string")], "Io.File"),
-        core_func("Io.read", &[("path", "string")], "string"),
-        core_func("Io.write", &[("path", "string"), ("text", "string")], "nothing"),
-        core_func("Io.exists?", &[("path", "string")], "boolean"),
-        core_func("Io.delete", &[("path", "string")], "nothing"),
-        core_func("Io.copy", &[("src", "string"), ("dest", "string")], "nothing"),
-        core_func("Io.move", &[("src", "string"), ("dest", "string")], "nothing"),
-        // Fs
-        core_func("Fs.open", &[("path", "string")], "Fs.Dir"),
-        core_func("Fs.exists?", &[("path", "string")], "boolean"),
-        core_func("Fs.file?", &[("path", "string")], "boolean"),
-        core_func("Fs.dir?", &[("path", "string")], "boolean"),
-        core_func("Fs.join", &[("p1", "string"), ("p2", "string")], "string"),
-        core_func("Fs.extension", &[("path", "string")], "string"),
-        core_func("Fs.filename", &[("path", "string")], "string"),
-        core_func("Fs.stem", &[("path", "string")], "string"),
-        core_func("Fs.parent", &[("path", "string")], "string"),
-        core_func("Fs.abs", &[("path", "string")], "string"),
-        // Math
-        core_func("Math.abs", &[("n", "int")], "int"),
-        core_func("Math.min", &[("a", "int"), ("b", "int")], "int"),
-        core_func("Math.max", &[("a", "int"), ("b", "int")], "int"),
-        core_func("Math.clamp", &[("val", "int"), ("min", "int"), ("max", "int")], "int"),
-        core_func("Math.pow", &[("base", "int"), ("exp", "int")], "int"),
-        core_func("Math.sqr", &[("n", "int")], "<int, nothing>"),
-        // Cli
-        core_func("cli.arguments", &[], "vect<string>"),
-        core_func("cli.paint", &[("text", "string"), ("color", "hexcolor")], "nothing"),
-        // Env
-        core_func("env.current", &[], "string"),
-        core_func("env.home", &[], "string"),
-        core_func("env.get", &[("name", "string")], "string"),
-        core_func("env.set", &[("name", "string"), ("value", "string")], "nothing"),
-        // Machine
-        core_func("console.out", &[("value", "something")], "nothing"),
-        // Random
-        core_func("random.int", &[("min", "int"), ("max", "int")], "int"),
-        core_func("random.float", &[], "float"),
-        core_func("random.boolean", &[], "boolean"),
-        core_func("random.choice", &[("items", "vect<something>")], "something"),
-        // Http
-        core_func("http.get", &[("url", "string")], "string"),
-        core_func("http.post", &[("url", "string"), ("body", "string")], "string"),
-        // Json
-        core_func("json.parse", &[("text", "string")], "map<string, something>"),
-        core_func("json.stringify", &[("value", "something")], "string"),
-    ]
-}
-
 fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported: &[Program]) -> Vec<Value> {
     let lower = prefix.to_lowercase();
-    match lower.as_str() {
-        "time" => vec![
-            json!({ "label": "benchmark", "kind": 3, "detail": "benchmark({ ... }) -> int", "insertText": "benchmark({\n\t$0\n})", "insertTextFormat": 2 }),
-            core_func("now", &[], "int"),
-            core_func("now_ms", &[], "int"),
-            core_func("sleep", &[("ms", "int")], "nothing"),
-            core_func("elapsed", &[("start_ms", "int")], "int"),
-        ],
-        "io" => vec![
-            core_func("open", &[("path", "string")], "Io.File"),
-            core_func("read", &[("path", "string")], "string"),
-            core_func("write", &[("path", "string"), ("text", "string")], "nothing"),
-            core_func("exists?", &[("path", "string")], "boolean"),
-            core_func("delete", &[("path", "string")], "nothing"),
-            core_func("copy", &[("src", "string"), ("dest", "string")], "nothing"),
-            core_func("move", &[("src", "string"), ("dest", "string")], "nothing"),
-        ],
-        "fs" => vec![
-            core_func("open", &[("path", "string")], "Fs.Dir"),
-            core_func("exists?", &[("path", "string")], "boolean"),
-            core_func("file?", &[("path", "string")], "boolean"),
-            core_func("dir?", &[("path", "string")], "boolean"),
-            core_func("join", &[("p1", "string"), ("p2", "string")], "string"),
-            core_func("extension", &[("path", "string")], "string"),
-            core_func("filename", &[("path", "string")], "string"),
-            core_func("stem", &[("path", "string")], "string"),
-            core_func("parent", &[("path", "string")], "string"),
-            core_func("abs", &[("path", "string")], "string"),
-        ],
-        "dir" => vec![
-            core_func("create", &[("name", "string")], "nothing"),
-            core_func("delete", &[("target", "string")], "nothing"),
-            core_func("files", &[], "vect<string>"),
-            core_func("dirs", &[], "vect<string>"),
-            core_func("walk", &[], "vect<string>"),
-            core_func("get_children", &[], "vect<string>"),
-        ],
-        "file" => vec![
-            core_func("read", &[], "string"),
-            core_func("write", &[("text", "string")], "nothing"),
-            core_func("close", &[], "nothing"),
-            core_func("size", &[], "int"),
-            core_func("lines", &[], "vect<string>"),
-        ],
-        "math" => vec![
-            core_func("abs", &[("n", "int")], "int"),
-            core_func("min", &[("a", "int"), ("b", "int")], "int"),
-            core_func("max", &[("a", "int"), ("b", "int")], "int"),
-            core_func("clamp", &[("val", "int"), ("min", "int"), ("max", "int")], "int"),
-            core_func("pow", &[("base", "int"), ("exp", "int")], "int"),
-            core_func("sqr", &[("n", "int")], "<int, nothing>"),
-        ],
-        "cli" => vec![
-            core_func("arguments", &[], "vect<string>"),
-            core_func("paint", &[("text", "string"), ("color", "hexcolor")], "nothing"),
-        ],
-        "env" => vec![
-            core_func("current", &[], "string"),
-            core_func("home", &[], "string"),
-            core_func("get", &[("name", "string")], "string"),
-            core_func("set", &[("name", "string"), ("value", "string")], "nothing"),
-        ],
-        "console" => vec![
-            core_func("out", &[("value", "something")], "nothing"),
-        ],
-        "random" => vec![
-            core_func("int", &[("min", "int"), ("max", "int")], "int"),
-            core_func("float", &[], "float"),
-            core_func("boolean", &[], "boolean"),
-            core_func("choice", &[("items", "vect<something>")], "something"),
-        ],
-        "http" => vec![
-            core_func("get", &[("url", "string")], "string"),
-            core_func("post", &[("url", "string"), ("body", "string")], "string"),
-        ],
-        "json" => vec![
-            core_func("parse", &[("text", "string")], "map<string, something>"),
-            core_func("stringify", &[("value", "something")], "string"),
-        ],
-        _ => {
-            let mut members = Vec::new();
+    let builtin_methods: &[(&str, &[&str])] = &[
+        ("time", &["now", "now_ms", "sleep", "elapsed", "benchmark"]),
+        ("io", &["open", "read", "write", "exists?", "delete", "copy", "move"]),
+        ("fs", &["open", "exists?", "file?", "dir?", "join", "extension", "filename", "stem", "parent", "abs"]),
+        ("dir", &["open", "create", "delete", "files", "dirs", "walk", "get_children"]),
+        ("file", &["read", "write", "close", "size", "lines"]),
+        ("math", &["abs", "min", "max", "clamp", "pow", "sqr"]),
+        ("cli", &["arguments", "paint"]),
+        ("env", &["current", "home", "get", "set"]),
+        ("console", &["out"]),
+        ("machine", &["out"]),
+        ("random", &["int", "float", "boolean", "choice"]),
+        ("http", &["get", "post", "download"]),
+        ("json", &["parse", "stringify"]),
+        ("webview", &["open", "on_message", "eval", "run"]),
+    ];
 
-            let all_programs: Vec<&Program> = program_opt.into_iter().chain(imported.iter()).collect();
-            for p in &all_programs {
-                for m in &p.modules {
-                    if m.name == prefix {
-                        for func in &m.functions {
-                            members.push(func_to_completion(func, None));
-                        }
-                    }
+    if let Some((_, methods)) = builtin_methods.iter().find(|(m, _)| *m == lower) {
+        return methods
+            .iter()
+            .map(|name| {
+                json!({
+                    "label": *name,
+                    "kind": 2, // Method
+                    "detail": "function"
+                })
+            })
+            .collect();
+    }
+
+    let mut members = Vec::new();
+    let all_programs: Vec<&Program> = program_opt.into_iter().chain(imported.iter()).collect();
+
+    // 1. Direct Module or Structure member match
+    for p in &all_programs {
+        for m in &p.modules {
+            if m.name == prefix {
+                for func in &m.functions {
+                    members.push(func_to_completion(func, None));
                 }
+            }
+        }
 
-                for st in &p.structures {
-                    if st.name == prefix {
-                        for m in &st.methods {
-                            members.push(method_to_completion(m, &st.name));
-                        }
-                        for (f_name, f_ty) in &st.fields {
-                            members.push(json!({
-                                "label": f_name,
-                                "kind": 5, // Field
-                                "detail": format!("{}: {}", f_name, f_ty)
-                            }));
-                        }
+        for st in &p.structures {
+            if st.name == prefix {
+                for m in &st.methods {
+                    members.push(method_to_completion(m, &st.name));
+                }
+                for (f_name, f_ty) in &st.fields {
+                    members.push(json!({
+                        "label": f_name,
+                        "kind": 5, // Field
+                        "detail": format!("{}: {}", f_name, f_ty)
+                    }));
+                }
+            }
+        }
+    }
+
+    // 2. Variable instance member match (e.g. `app.`, `win.`, `player.`)
+    let mut resolved_type = None;
+    for p in &all_programs {
+        for stmt in &p.statements {
+            if let Statement::Var(v) = stmt {
+                if v.name == prefix {
+                    resolved_type = Some(format!("{}", v.ty));
+                    break;
+                }
+            }
+        }
+        if resolved_type.is_some() {
+            break;
+        }
+    }
+
+    if let Some(ty_str) = resolved_type {
+        for p in &all_programs {
+            for st in &p.structures {
+                if st.name == ty_str {
+                    for m in &st.methods {
+                        members.push(method_to_completion(m, &st.name));
+                    }
+                    for (f_name, f_ty) in &st.fields {
+                        members.push(json!({
+                            "label": f_name,
+                            "kind": 5, // Field
+                            "detail": format!("{}: {}", f_name, f_ty)
+                        }));
                     }
                 }
             }
-
-            members
         }
     }
+
+    members
 }

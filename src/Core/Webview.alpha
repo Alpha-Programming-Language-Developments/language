@@ -1,0 +1,8 @@
+// Core standard library module: Webview
+// Provides native desktop window and WebView primitives with bidirectional IPC.
+
+// Usage:
+//   Webview.open({ "title": "My App", "width": 800, "height": 600, "url": "index.html" })
+//   Webview.on_message(fn(msg: string) { ... })
+//   Webview.eval("console.log('from alpha')")
+//   Webview.run()

@@ -20,6 +20,34 @@ const VALUE_RS: &str = include_str!("../runtime/value.rs");
 const ENV_RS: &str = include_str!("../runtime/env.rs");
 const STDLIB_RS: &str = include_str!("../runtime/stdlib.rs");
 const INTERPRETER_RS: &str = include_str!("../runtime/interpreter.rs");
+const STUB_WEBVIEW_RS: &str = r#"
+#[derive(Clone, Debug)]
+pub struct WebviewWindowConfig {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
+    pub resizable: bool,
+    pub html: Option<String>,
+    pub url: Option<String>,
+}
+
+impl Default for WebviewWindowConfig {
+    fn default() -> Self {
+        Self {
+            title: "WebAlph Application".to_string(),
+            width: 900,
+            height: 650,
+            resizable: true,
+            html: None,
+            url: None,
+        }
+    }
+}
+
+pub fn run_webview_loop(_interp: &mut crate::runtime::interpreter::Interpreter, span: crate::diagnostics::error::Span) -> Result<crate::runtime::value::Value, crate::diagnostics::error::AlphaError> {
+    Err(crate::diagnostics::error::AlphaError::runtime("Webview GUI mode requires running via `alpha run`.", span))
+}
+"#;
 
 /// Compiles an Alpha project into a native binary located in the `build/` folder.
 pub fn build_project(project_dir: &Path) -> Result<PathBuf, AlphaError> {
@@ -139,7 +167,8 @@ fn build_custom(
     fs::write(run_dir.join("env.rs"), ENV_RS).unwrap();
     fs::write(run_dir.join("stdlib.rs"), STDLIB_RS).unwrap();
     fs::write(run_dir.join("interpreter.rs"), INTERPRETER_RS).unwrap();
-    fs::write(run_dir.join("mod.rs"), "pub mod value;\npub mod env;\npub mod stdlib;\npub mod interpreter;\npub use self::value::*;\npub use self::env::*;\npub use self::stdlib::*;\npub use self::interpreter::*;\n").unwrap();
+    fs::write(run_dir.join("webview.rs"), STUB_WEBVIEW_RS).unwrap();
+    fs::write(run_dir.join("mod.rs"), "pub mod value;\npub mod env;\npub mod stdlib;\npub mod interpreter;\npub mod webview;\npub use self::value::*;\npub use self::env::*;\npub use self::stdlib::*;\npub use self::interpreter::*;\npub use self::webview::*;\n").unwrap();
 
     // 6. Collect and embed all project .alpha files (including custom Core modules)
     let mut embedded_files = Vec::new();
