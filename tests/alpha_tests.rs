@@ -1864,3 +1864,94 @@ var global_count: int = 100
     let sig_res = server.get_signature_help(&sig_req);
     assert!(sig_res["signatures"].is_array());
 }
+
+#[test]
+fn test_everything_type_and_strict_mode() {
+    let source = r#"
+@strict
+
+var a: everything = 42
+var b: everything = "hello world"
+var c: everything = true
+
+function check_everything(val: everything) [public, everything] {
+    return val
+}
+
+function main() [public, int] {
+    var res: everything = check_everything(a)
+    return 0
+}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Typechecking everything in strict mode should succeed");
+
+    let invalid_source = r#"
+var bad: everything = nothing
+"#;
+    let mut lexer2 = Lexer::new(invalid_source);
+    let tokens2 = lexer2.tokenize().unwrap();
+    let mut parser2 = Parser::new(tokens2);
+    let prog2 = parser2.parse_program().unwrap();
+    let mut tc2 = TypeChecker::new();
+    assert!(tc2.check_program(&prog2).is_err());
+}
+
+#[test]
+fn test_arena_allocator_full_lifecycle() {
+    let source = r#"
+import Core/ArenaAllocator
+
+var sector: Mem.ArenaSector = mem.arena.allocate()
+var my_text: string = "Alpha Arena Memory"
+
+sector.insert(my_text)
+
+var c1: int = sector.count()
+var read_back: string = my_text
+
+sector.reset()
+var c2: int = sector.count()
+
+function main() [public, nothing] {}
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Typechecking arena allocator should succeed");
+
+    let mut interp = Interpreter::new();
+    interp.execute_program(&program, None).expect("Running arena lifecycle should succeed");
+
+    assert_eq!(interp.env.get("c1"), Some(alpha_lang::runtime::value::Value::Int(1)));
+    assert_eq!(interp.env.get("c2"), Some(alpha_lang::runtime::value::Value::Int(0)));
+    assert_eq!(interp.env.get("read_back"), Some(alpha_lang::runtime::value::Value::String("Alpha Arena Memory".to_string())));
+
+    // Accessing my_text after sector.reset() must trigger use-after-free error!
+    let uaf_source = r#"
+import Core/ArenaAllocator
+
+var sector: Mem.ArenaSector = mem.arena.allocate()
+var secret: string = "Secret Data"
+sector.insert(secret)
+sector.reset()
+
+var fail: string = secret
+"#;
+    let mut lexer_uaf = Lexer::new(uaf_source);
+    let tokens_uaf = lexer_uaf.tokenize().unwrap();
+    let mut parser_uaf = Parser::new(tokens_uaf);
+    let prog_uaf = parser_uaf.parse_program().unwrap();
+    let mut interp_uaf = Interpreter::new();
+    let err = interp_uaf.execute_program(&prog_uaf, None).unwrap_err();
+    assert!(err.to_string().contains("Arena memory error") || err.to_string().contains("Use-After-Free"));
+}

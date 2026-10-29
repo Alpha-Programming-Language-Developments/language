@@ -4,13 +4,44 @@ use crate::diagnostics::error::AlphaError;
 use crate::driver::project::{find_project_root, init_project};
 use crate::frontend::lexer::Lexer;
 use crate::frontend::parser::Parser;
-use crate::runtime::interpreter::Interpreter;
 use crate::semantics::typechecker::TypeChecker;
 use std::env;
 use std::fs;
+use crate::runtime::interpreter::Interpreter;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 pub fn run_cli() -> Result<(), AlphaError> {
+    // 0. Check if the current binary is a standalone bundled Alpha project
+    if let Ok(exe_path) = env::current_exe() {
+        if let Ok(mut file) = fs::File::open(&exe_path) {
+            let magic = b"ALPHA_BUNDLE_V1";
+            let total_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+            if total_len > (magic.len() as u64 + 8) {
+                let suffix_pos = total_len - (magic.len() as u64 + 8);
+                if file.seek(SeekFrom::Start(suffix_pos)).is_ok() {
+                    let mut len_buf = [0u8; 8];
+                    let mut magic_buf = vec![0u8; magic.len()];
+                    if file.read_exact(&mut len_buf).is_ok() && file.read_exact(&mut magic_buf).is_ok() {
+                        if magic_buf == magic {
+                            let payload_len = u64::from_le_bytes(len_buf) as usize;
+                            let payload_pos = suffix_pos.saturating_sub(payload_len as u64);
+                            if file.seek(SeekFrom::Start(payload_pos)).is_ok() {
+                                let mut payload_data = vec![0u8; payload_len];
+                                if file.read_exact(&mut payload_data).is_ok() {
+                                    if let Ok(bundle) = serde_json::from_slice::<crate::driver::project::AlphaProjectBundle>(&payload_data) {
+                                        let script_args = env::args().skip(1).collect::<Vec<_>>();
+                                        return run_bundle(bundle, &script_args);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -176,29 +207,46 @@ fn run_file(path: &Path, cli_args: &[String]) -> Result<(), AlphaError> {
         ));
     }
 
-    let source = fs::read_to_string(path).map_err(|e| {
-        AlphaError::runtime(format!("Failed to read file {:?}: {}", path, e), Default::default())
-    })?;
-
-    let file_str = path.to_string_lossy().to_string();
-    let mut interp = Interpreter::new().with_cli_args(cli_args.to_vec());
-    if let Some(parent) = path.parent() {
+    // 1. Compile directly into a native executable via LLVM backend
+    let exe_path = if let Some(parent) = path.parent() {
         if let Some(root) = find_project_root(parent) {
-            interp = interp.with_working_dir(root);
+            build_project(&root)?
         } else {
-            let cur = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            if cur.join("src").join("Core").exists() {
-                interp = interp.with_working_dir(cur);
-            } else {
-                interp = interp.with_working_dir(parent.to_path_buf());
-            }
+            build_file(path)?
         }
+    } else {
+        build_file(path)?
+    };
+
+    // 2. Immediately execute the compiled binary with CLI arguments
+    let status = std::process::Command::new(&exe_path)
+        .args(cli_args)
+        .status()
+        .map_err(|e| {
+            AlphaError::runtime(format!("Failed to execute compiled binary: {}", e), Default::default())
+        })?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
 
-    match interp.eval_source(&source, Some(&file_str)) {
+    Ok(())
+}
+
+fn run_bundle(bundle: crate::driver::project::AlphaProjectBundle, cli_args: &[String]) -> Result<(), AlphaError> {
+    let mut interp = Interpreter::new().with_cli_args(cli_args.to_vec());
+    let cur_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    interp = interp.with_working_dir(cur_dir);
+
+    for (rel_path, content) in &bundle.files {
+        interp.register_source_module(rel_path, content);
+        interp.register_source_module(&format!("src/{}", rel_path), content);
+    }
+
+    match interp.eval_source(&bundle.source, Some(&bundle.entry_file)) {
         Ok(_) => Ok(()),
         Err(e) => {
-            eprintln!("{}", e.with_file(&file_str).format_with_source(&source));
+            eprintln!("{}", e.with_file(&bundle.entry_file).format_with_source(&bundle.source));
             std::process::exit(1);
         }
     }
@@ -266,8 +314,8 @@ USAGE:
 
 COMMANDS:
     here [name]     Initialize a new Alpha project in the current directory
-    build           Compile the project into a native binary in build/
-    run [file]      Execute an Alpha file or project directly
+    build [file]    Compile into a native binary via direct LLVM Backend (-O3)
+    run [file]      Compile and execute with native hardware speed
     check [file]    Verify syntax and perform static type checking without running
     help            Print this help message
 
@@ -278,7 +326,7 @@ OPTIONS:
 EXAMPLES:
     alpha here my_project
     alpha run src/main.alpha
-    alpha build
+    alpha build src/main.alpha
     alpha check
     alpha -v
 "#,

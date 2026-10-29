@@ -16,6 +16,13 @@ pub struct ProjectConfig {
     pub project: ProjectSection,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlphaProjectBundle {
+    pub entry_file: String,
+    pub source: String,
+    pub files: Vec<(String, String)>,
+}
+
 impl ProjectConfig {
     pub fn new(name: impl Into<String>) -> Self {
         Self {

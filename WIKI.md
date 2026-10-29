@@ -10,6 +10,7 @@ Welcome to the comprehensive reference manual and documentation for the **Alpha 
 # 🇬🇧 English Documentation
 
 ## 1. Syntax Fundamentals
+- **LLVM Native Performance**: Alpha compiles directly to optimized machine code via the LLVM backend (`-O3`), achieving native speeds on par with C, Zig, and Rust.
 - **Statically Typed**: All variables and functions have explicit or inferred types verified at compile-time.
 - **Optional Semicolons**: Semicolons (`;`) are completely optional at the end of statements.
 - **Code Blocks**: Blocks are delimited by braces `{ ... }`.
@@ -28,7 +29,8 @@ Welcome to the comprehensive reference manual and documentation for the **Alpha 
 - `boolean`: Logical `true` or `false`.
 
 ### 2.2 Special Types
-- `something`: Dynamic / universal container type that can hold any value (similar to `any`).
+- `something`: Dynamic / universal container type that can hold any value (similar to `any`). Forbidden in `@strict` mode.
+- `everything`: Static universal union type representing **any valid value except `nothing`**. Unlike `something`, `everything` is fully permitted in `@strict` mode.
 - `nothing`: Represents the complete absence of a value (similar to `nil` or `void`).
 - `hexcolor`: Dedicated 24-bit color literal type declared with `#(...)`, e.g. `#(FFF00)` or `#(FF00AA)`.
 
@@ -52,7 +54,7 @@ function find_id(name: string) [public, <int, nothing>] {
 Adding `@strict` at the top of a file (or at any point) activates enterprise-grade strict typechecking from that line forward:
 1. **Explicit Typing Required**: Every variable must have an explicit type annotation (`var x: int = 10`). Untyped declarations like `var x = 10` are rejected.
 2. **Safe Box / Union Handling**: Values wrapped in union/box types must be unpacked with `check` pattern matching. Force unwrap operators (`!?`, `!`) are strictly prohibited!
-3. **No `something` or `nothing`**: Dynamic `something` and `nothing` types and literals are forbidden.
+3. **No `something` or `nothing`**: Dynamic `something` and `nothing` types and standalone literals are forbidden. However, the universal non-nothing union type **`everything`** is explicitly allowed.
 4. **Zero Tolerance**: Any violation immediately halts compilation with a `[Strict Mode]` error.
 
 ```alpha
@@ -400,17 +402,27 @@ var url: string = NetworkTools.format_url("127.0.0.1", 8080)
 All remote web dependencies are declared in `packages.alpaks` at the root of your project:
 ```text
 # packages.alpaks
-"something" = import web::"https://pastebin.com/raw/dC4eYYwH"
+# Canonical syntax with web:: prefix:
+"webalph" = import web::"https://raw.githubusercontent.com/Alpha-Programming-Language-Developments/webalph/main/src/lib.alpha"
+
+# Direct URL syntax (auto-converts GitHub /blob/ URLs to raw code):
+"webalph_direct" = import "https://github.com/Alpha-Programming-Language-Developments/webalph/blob/main/src/lib.alpha"
+
+# Local or network dependencies:
 "uuid" = import web::"https://example.com/alpha-pkgs/uuid.alpha"
 ```
 
+Key features:
+- **GitHub URL Auto-Normalization**: Pasting standard repository links like `https://github.com/org/repo/blob/main/src/lib.alpha` is automatically converted on-the-fly to raw source URLs.
+- **Cascading Relative Imports**: When a remote module imports sibling files (e.g. `import window.alpha`), Alpha automatically resolves and fetches them relative to the remote base URL.
+
 In your `.alpha` code, import them directly by their alias:
 ```alpha
-import something
-import uuid
+import webalph
 
 function main() [public, nothing] {
-    something()
+    let app = App.new("WebAlph App", 800, 600, "ui/index.html")
+    app.run()
 }
 ```
 *(Direct `import web::"..."` inside source files is strictly prohibited to keep builds reproducible and maintainable).*
@@ -487,6 +499,43 @@ function main() [public, nothing] {
 ### `Core/Machine.alpha`
 - `console.out(command)`: Executes system command in the terminal and returns its stdout string (`string`).
 
+### `Core/ArenaAllocator.alpha`
+High-performance region-based arena memory management.
+- `mem.arena.allocate()` / `Mem.Arena.allocate([capacity: int]) -> Mem.ArenaSector`: Allocates a new contiguous memory sector.
+- `sector.insert(object: everything) -> nothing`: Moves an object or variable from the general environment into the arena sector. The original variable transparently points to the allocated slot in the arena.
+- `sector.reset() -> nothing`: Deallocates and wipes all objects stored within the sector in a single $O(1)$ operation.
+- `sector.count() -> int`: Returns the total number of live objects currently stored inside the arena sector.
+- `sector.allocated() -> int`: Returns the total memory footprint in bytes allocated by the sector.
+- **Generational Protection**: If code attempts to access a variable previously moved to an arena after `.reset()` has been called, Alpha immediately raises a safety error, preventing Use-After-Free vulnerabilities.
+
+```alpha
+import Core/ArenaAllocator
+
+var sector: Mem.ArenaSector = mem.arena.allocate()
+var cache: string = "Volatile Computation Results"
+
+sector.insert(cache)
+print(cache)           // "Volatile Computation Results"
+print(sector.count())  // 1
+
+sector.reset()         // Frees all arena memory
+print(sector.count())  // 0
+// print(cache)        // Runtime error: Use-After-Free prevented
+```
+
+### `Core/Webview.alpha`
+Native desktop graphical user interface and WebView subsystem powered by Wry and Tao.
+- `Webview.open(options: map<string, something>) -> nothing`: Configures and initializes a native window. Supported keys:
+  - `"title"` (`string`): Window title.
+  - `"width"` (`int`): Window width in pixels.
+  - `"height"` (`int`): Window height in pixels.
+  - `"resizable"` (`boolean`): Window resize permissions.
+  - `"url"` (`string`): Local file path (`ui/index.html`) or remote web URL (`https://...` or `http://localhost:...`).
+  - `"html"` (`string`): Raw inline HTML string markup.
+- `Webview.on_message(callback: function) -> nothing`: Registers a listener for asynchronous messages sent from JavaScript via `window.ipc.postMessage(...)` or `window.webalph.invoke(...)`.
+- `Webview.eval(script: string) -> nothing`: Queues JavaScript code for immediate evaluation inside the webview context.
+- `Webview.run() -> nothing`: Starts the native desktop event loop.
+
 ---
 
 ## 18. CLI Tooling Reference
@@ -514,11 +563,40 @@ alpha --help
 ```
 
 ---
+
+## 19. Language Server (`alpha-lsp`) & Editor Integration
+
+The Alpha language includes an official Language Server Protocol implementation (`alpha-lsp`) providing IDE features for editors like **Zed**, VS Code, and Neovim.
+
+### Features
+- **Real-time Diagnostics**: Immediate feedback on syntax errors, type-check errors, and `@strict` violations as you type.
+- **Smart Completions**: Auto-completes keywords, primitive types (`unt`, `int`, `everything`), and standard library modules (`Io`, `Fs`, `Time`, `Math`, `Env`, `Mem`, `Webview`).
+- **Hover Documentation**: Detailed documentation for keywords, types, and functions.
+- **Signature Help**: Interactive parameter hints and type signatures for builtin functions and methods.
+
+### Running the Language Server
+```bash
+# Direct binary
+alpha-lsp
+
+# Or via alpha CLI subcommand
+alpha lsp
+```
+
+### Zed Editor Extension (`editors/zed-alpha`)
+The `editors/zed-alpha` folder contains a complete Zed extension:
+1. In Zed, open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+2. Run `zed: install dev extension`.
+3. Select `editors/zed-alpha`.
+4. Zed automatically links Tree-sitter syntax highlighting, symbol outline, and connects to `alpha-lsp`.
+
+---
 ---
 
 # 🇷🇺 Русская Документация (Russian Documentation)
 
 ## 1. Основы синтаксиса
+- **Нативная производительность LLVM**: Alpha компилируется напрямую в оптимизированный машинный код через бэкенд LLVM (`-O3`), обеспечивая экстремальную скорость выполнения на уровне C, Zig и Rust.
 - **Строгая статическая типизация**: Все переменные и функции имеют типы, проверяемые на этапе компиляции.
 - **Необязательные точки с запятой**: Точки с запятой (`;`) ставить не требуется.
 - **Блоки кода**: Выделяются фигурными скобками `{ ... }`.
@@ -537,7 +615,8 @@ alpha --help
 - `boolean`: Логическое `true` или `false`.
 
 ### 2.2 Специальные типы
-- `something`: Универсальный динамический тип (может содержать значение любого типа).
+- `something`: Универсальный динамический авто-тип (может содержать значение любого типа, запрещён в режиме `@strict`).
+- `everything`: Универсальный статический тип-объединение **всех типов данных языка кроме `nothing`**. В отличие от `something`, тип `everything` полностью разрешён и поддерживается в режиме `@strict`.
 - `nothing`: Отсутствие значения (`nil` / `null` / `void`).
 - `hexcolor`: Отдельный тип цвета, задаваемый как `#(...)`, например `#(FFF00)` или `#(00AAFF)`.
 
@@ -561,7 +640,7 @@ function get_data(id: int) [public, <string, nothing>] {
 Добавление директивы `@strict` в файл активирует бескомпромиссную строгую проверку типов для всех последующих строк:
 1. **Обязательная явная типизация**: Каждая переменная обязана иметь явно указанный тип (`var x: int = 10`). Объявления вида `var x = 10` запрещены.
 2. **Безопасная распаковка Box / Union типов**: Значения составных union/box типов обязаны обрабатываться через безопасное сопоставление `check`. Использование операторов форсированного развертывания (`!?` и `!`) строго запрещено!
-3. **Полный запрет `something` и `nothing`**: Запрещено объявлять типы `something` / `nothing` или использовать литерал `nothing`.
+3. **Запрет `something` и `nothing`**: Запрещено объявлять типы `something` / `nothing` или использовать литерал `nothing`. При этом универсальный не-nothing тип **`everything`** полностью разрешён.
 4. **Строгий контроль**: При малейшем нарушении компилятор останавливает сборку с ошибкой `[Strict Mode]`.
 
 ```alpha
@@ -898,17 +977,27 @@ var res: boolean = StringUtils.is_blank?("hello")
 Все внешние веб-библиотеки объявляются исключительно в корневом файле **`packages.alpaks`**:
 ```text
 # packages.alpaks
-"something" = import web::"https://pastebin.com/raw/dC4eYYwH"
+# Канонический синтаксис с префиксом web:::
+"webalph" = import web::"https://raw.githubusercontent.com/Alpha-Programming-Language-Developments/webalph/main/src/lib.alpha"
+
+# Прямой URL (Alpha автоматически конвертирует ссылки GitHub /blob/ в сырой код raw):
+"webalph_direct" = import "https://github.com/Alpha-Programming-Language-Developments/webalph/blob/main/src/lib.alpha"
+
+# Локальные или внешние пакеты:
 "http_utils" = import web::"https://example.com/alpha-pkgs/http.alpha"
 ```
 
-В исходном коде они импортируются по заданному алиасу:
+Возможности менеджера пакетов:
+- **Автоматическая нормализация ссылок GitHub**: Прямые ссылки из адресной строки браузера вида `https://github.com/org/repo/blob/main/src/lib.alpha` компилятор Alpha автоматически конвертирует в raw-ссылки на чистый код.
+- **Каскадная загрузка относительных импортов**: Если удалённый модуль подключает зависимые файлы (например, `import window.alpha`), Alpha автоматически докачивает их относительно базового сетевого URL репозитория.
+
+В исходном коде библиотеки подключаются по присвоенному алиасу:
 ```alpha
-import something
-import http_utils
+import webalph
 
 function main() [public, nothing] {
-    something()
+    let app = App.new("Окно WebAlph", 800, 600, "ui/index.html")
+    app.run()
 }
 ```
 *(Прямой импорт `import web::"..."` внутри исходных файлов запрещён на уровне компилятора).*
@@ -985,6 +1074,43 @@ function main() [public, nothing] {
 ### `Core/Machine.alpha`
 - `console.out(command)`: Выполняет терминальную команду операционной системы и возвращает её вывод (`string`).
 
+### `Core/ArenaAllocator.alpha`
+Высокопроизводительное управление секторной (аренной) памятью.
+- `mem.arena.allocate()` / `Mem.Arena.allocate([capacity: int]) -> Mem.ArenaSector`: Выделяет новый сектор памяти.
+- `sector.insert(object: everything) -> nothing`: Физически перемещает объект или переменную из общего окружения в сектор арены. Исходная переменная прозрачно ссылается на ячейку в арене.
+- `sector.reset() -> nothing`: Освобождает и удаляет абсолютно все объекты, находившиеся в данном секторе, за одну операцию $O(1)$.
+- `sector.count() -> int`: Возвращает текущее количество объектов в секторе.
+- `sector.allocated() -> int`: Возвращает размер занятой сектором памяти в байтах.
+- **Поколенческая защита от Use-After-Free**: Попытка обратиться к переменной, перемещённой в арену, после вызова `.reset()` моментально прерывается рантаймом с ошибкой безопасности, защищая от утечек и чтения повисших указателей.
+
+```alpha
+import Core/ArenaAllocator
+
+var sector: Mem.ArenaSector = mem.arena.allocate()
+var sensitive_data: string = "Секретные данные"
+
+sector.insert(sensitive_data)
+print(sensitive_data)   // "Секретные данные"
+print(sector.count())   // 1
+
+sector.reset()          // Очистка памяти сектора
+print(sector.count())   // 0
+// print(sensitive_data) // Ошибка: Use-After-Free предотвращён
+```
+
+### `Core/Webview.alpha`
+Подсистема нативных десктопных окон и WebView на базе Wry и Tao (WebView2 / WebKit).
+- `Webview.open(options: map<string, something>) -> nothing`: Создаёт и настраивает нативное окно:
+  - `"title"` (`string`): Заголовок окна.
+  - `"width"` (`int`): Ширина в пикселях.
+  - `"height"` (`int`): Высота в пикселях.
+  - `"resizable"` (`boolean`): Разрешение изменения размера окна.
+  - `"url"` (`string`): Путь к локальному файлу (`ui/index.html`) или внешний веб-адрес (`https://...`, `http://localhost:...`).
+  - `"html"` (`string`): Встроенная HTML-разметка строкой.
+- `Webview.on_message(callback: function) -> nothing`: Регистрация обработчика входящих сообщений из JavaScript (`window.ipc.postMessage(...)` / `window.webalph.invoke(...)`).
+- `Webview.eval(script: string) -> nothing`: Выполнение произвольного кода JavaScript в контексте веб-окна.
+- `Webview.run() -> nothing`: Запуск главного цикла событий нативного приложения.
+
 ---
 
 ## 18. Команды утилиты CLI (`alpha`)
@@ -1013,41 +1139,15 @@ alpha --help
 
 ---
 
-## 15. Language Server (`alpha-lsp`) & Editor Integration
-
-The Alpha language includes an official Language Server Protocol implementation (`alpha-lsp`) providing IDE features for editors like **Zed**, VS Code, and Neovim.
-
-### Features
-- **Real-time Diagnostics**: Immediate feedback on syntax errors, type-check errors, and `@strict` violations as you type.
-- **Smart Completions**: Auto-completes keywords, primitive types (`unt`, `int`), and standard library modules (`Io`, `Fs`, `Time`, `Math`, `Env`).
-- **Hover Documentation**: Detailed documentation for keywords, types, and functions.
-
-### Running the Language Server
-```bash
-# Direct binary
-alpha-lsp
-
-# Or via alpha CLI subcommand
-alpha lsp
-```
-
-### Zed Editor Extension (`editors/zed-alpha`)
-The `editors/zed-alpha` folder contains a complete Zed extension:
-1. In Zed, open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
-2. Run `zed: install dev extension`.
-3. Select `editors/zed-alpha`.
-4. Zed automatically links Tree-sitter syntax highlighting, symbol outline, and connects to `alpha-lsp`.
-
----
-
-## 15. Language Server (`alpha-lsp`) и интеграция с редакторами
+## 19. Language Server (`alpha-lsp`) и интеграция с редакторами
 
 В состав языка Alpha входит официальный сервер языка по протоколу LSP (`alpha-lsp`), обеспечивающий поддержку для редакторов **Zed**, VS Code, Neovim и других.
 
 ### Возможности
 - **Диагностика в реальном времени**: Мгновенная подсветка синтаксических ошибок, несоответствия типов и нарушений директивы `@strict` при вводе.
-- **Автодополнение (Completions)**: Подсказки по ключевым словам, примитивным типам (`unt`, `int`, etc.), функциям и модулям стандартной библиотеки (`Io`, `Fs`, `Time`, `Math`, `Env`).
+- **Автодополнение (Completions)**: Подсказки по ключевым словам, примитивным типам (`unt`, `int`, `everything`), функциям и модулям стандартной библиотеки (`Io`, `Fs`, `Time`, `Math`, `Env`, `Mem`, `Webview`).
 - **Всплывающая документация (Hover)**: Подробные описания и примеры при наведении курсора на ключевые слова, директивы и типы.
+- **Подсказка сигнатур (Signature Help)**: Интерактивная подсказка параметров и типов функций и методов при вводе круглых скобок `(...)`.
 
 ### Запуск Language Server
 ```bash

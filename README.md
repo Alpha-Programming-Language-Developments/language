@@ -7,7 +7,7 @@
 **A modern, statically-typed, expressive language with intuitive 1-based indexing, powerful package management, and first-class developer ergonomics.**
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)](Cargo.toml)
-[![Build & Tests](https://img.shields.io/badge/tests-52%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
+[![Build & Tests](https://img.shields.io/badge/tests-59%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20POSIX-orange.svg?style=for-the-badge)](#)
 
@@ -20,6 +20,9 @@
 ## 🌟 Key Features
 
 - 🎯 **Intuitive 1-Based Indexing**: Natural element counting for vectors, tuples, strings, and maps (`v[1]` is the first item).
+- 🧠 **Region-Based Arena Memory (`Core/ArenaAllocator`)**: Fast contiguous allocation with $O(1)$ batch reset and generational Use-After-Free safety.
+- 🖼️ **Native Desktop GUI & Webview (`Core/Webview`)**: Modern Wry/Tao native desktop applications with HTML/JS/CSS interfaces and bidirectional IPC.
+- 🔒 **Enterprise Strict Mode & `everything` Type**: `@strict` validation with universal non-nothing `everything` type checked at compile-time.
 - 🎨 **First-Class HexColor & Terminal Painting**: Built-in `hexcolor` data type (`#(RRGGBB)`), `paint()` and `cli.paint()`.
 - 📦 **Declarative Web Package Manager**: Remote dependencies are declared in `packages.alpaks` with clean aliases.
 - 🧱 **Object-Oriented Structures & Enums**: Clear `structure` definitions with methods, constructors (`make`), and type-safe `enum` variants.

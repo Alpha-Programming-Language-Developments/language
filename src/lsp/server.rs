@@ -601,6 +601,10 @@ impl LspServer {
 
         // Standard library / builtin signatures
         let stdlib_sigs: HashMap<&str, (&str, &str, Vec<&str>)> = HashMap::from([
+            ("mem.arena.allocate", ("mem.arena.allocate([capacity: int]) -> Mem.ArenaSector", "Allocates a new memory arena sector", vec!["capacity: int"])),
+            ("Mem.arena.allocate", ("Mem.arena.allocate([capacity: int]) -> Mem.ArenaSector", "Allocates a new memory arena sector", vec!["capacity: int"])),
+            ("sector.insert", ("sector.insert(object: everything) -> nothing", "Moves an object or variable into the arena sector", vec!["object: everything"])),
+            ("sector.reset", ("sector.reset() -> nothing", "Frees and deletes all objects residing in this arena sector", vec![])),
             ("print", ("print(value: something) -> nothing", "Outputs value to stdout", vec!["value: something"])),
             ("printf", ("printf(fmt: string, ...args) -> nothing", "Outputs formatted string with {} placeholders", vec!["fmt: string", "...args"])),
             ("format", ("format(fmt: string, ...args) -> string", "Formats string with placeholders and padding", vec!["fmt: string", "...args"])),
@@ -969,7 +973,7 @@ impl LspServer {
         // F. Primitive Types
         let types = [
             "int", "unt", "float", "string", "char", "boolean",
-            "hexcolor", "vect", "map", "something", "nothing",
+            "hexcolor", "vect", "map", "something", "everything", "nothing",
         ];
         for ty in types {
             push_item(json!({
@@ -1070,6 +1074,9 @@ impl LspServer {
             "Http" | "http" => "module Http",
             "Json" | "json" => "module Json",
             "Webview" | "webview" => "module Webview",
+            "Mem" | "mem" => "module Mem (ArenaAllocator)",
+            "Mem.ArenaSector" | "ArenaSector" => "type Mem.ArenaSector",
+            "everything" => "type everything (accepts any value except nothing; allowed in strict mode)",
             "print" => "function print(value: something) -> nothing",
             "printf" => "function printf(fmt: string, ...args) -> nothing",
             "format" => "function format(fmt: string, ...args) -> string",
@@ -1289,6 +1296,11 @@ fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported:
         ("http", &["get", "post", "download"]),
         ("json", &["parse", "stringify"]),
         ("webview", &["open", "on_message", "eval", "run"]),
+        ("mem", &["arena", "allocate"]),
+        ("mem.arena", &["allocate"]),
+        ("mem.arenasector", &["insert", "reset", "count", "allocated"]),
+        ("arenasector", &["insert", "reset", "count", "allocated"]),
+        ("sector", &["insert", "reset", "count", "allocated"]),
     ];
 
     if let Some((_, methods)) = builtin_methods.iter().find(|(m, _)| *m == lower) {

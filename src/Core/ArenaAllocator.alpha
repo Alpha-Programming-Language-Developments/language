@@ -1,0 +1,12 @@
+// Core standard library module: ArenaAllocator
+// Provides region-based arena memory allocation and lifecycle management.
+
+// Static allocation:
+//   var sector: Mem.ArenaSector = mem.arena.allocate()
+//   var sector: Mem.ArenaSector = Mem.arena.allocate(capacity)
+
+// Sector instance methods:
+//   sector.insert(object)  - Moves an object/variable into the arena sector.
+//   sector.reset()         - Frees all objects allocated in this sector.
+//   sector.count()         - Returns the count of objects in the sector.
+//   sector.allocated()     - Returns the total bytes allocated in the sector.

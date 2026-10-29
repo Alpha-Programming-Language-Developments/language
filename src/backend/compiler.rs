@@ -8,47 +8,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// Embed the engine source files into the compiler binary.
-const ERROR_RS: &str = include_str!("../diagnostics/error.rs");
-const TOKEN_RS: &str = include_str!("../frontend/token.rs");
-const AST_RS: &str = include_str!("../frontend/ast.rs");
-const LEXER_RS: &str = include_str!("../frontend/lexer.rs");
-const PARSER_RS: &str = include_str!("../frontend/parser.rs");
-const TYPES_RS: &str = include_str!("../semantics/types.rs");
-const TYPECHECKER_RS: &str = include_str!("../semantics/typechecker.rs");
-const VALUE_RS: &str = include_str!("../runtime/value.rs");
-const ENV_RS: &str = include_str!("../runtime/env.rs");
-const STDLIB_RS: &str = include_str!("../runtime/stdlib.rs");
-const INTERPRETER_RS: &str = include_str!("../runtime/interpreter.rs");
-const STUB_WEBVIEW_RS: &str = r#"
-#[derive(Clone, Debug)]
-pub struct WebviewWindowConfig {
-    pub title: String,
-    pub width: u32,
-    pub height: u32,
-    pub resizable: bool,
-    pub html: Option<String>,
-    pub url: Option<String>,
-}
-
-impl Default for WebviewWindowConfig {
-    fn default() -> Self {
-        Self {
-            title: "WebAlph Application".to_string(),
-            width: 900,
-            height: 650,
-            resizable: true,
-            html: None,
-            url: None,
-        }
-    }
-}
-
-pub fn run_webview_loop(_interp: &mut crate::runtime::interpreter::Interpreter, span: crate::diagnostics::error::Span) -> Result<crate::runtime::value::Value, crate::diagnostics::error::AlphaError> {
-    Err(crate::diagnostics::error::AlphaError::runtime("Webview GUI mode requires running via `alpha run`.", span))
-}
-"#;
-
 /// Compiles an Alpha project into a native binary located in the `build/` folder.
 pub fn build_project(project_dir: &Path) -> Result<PathBuf, AlphaError> {
     let config = load_project_config(project_dir)?;
@@ -139,86 +98,6 @@ fn build_custom(
         AlphaError::runtime(format!("Failed to create build cache: {}", e), Span::default())
     })?;
 
-    // 5. Populate cache with modular engine source files
-    let diag_dir = cache_dir.join("diagnostics");
-    let front_dir = cache_dir.join("frontend");
-    let sem_dir = cache_dir.join("semantics");
-    let run_dir = cache_dir.join("runtime");
-
-    fs::create_dir_all(&diag_dir).unwrap();
-    fs::create_dir_all(&front_dir).unwrap();
-    fs::create_dir_all(&sem_dir).unwrap();
-    fs::create_dir_all(&run_dir).unwrap();
-
-    fs::write(diag_dir.join("error.rs"), ERROR_RS).unwrap();
-    fs::write(diag_dir.join("mod.rs"), "pub mod error;\npub use self::error::*;\n").unwrap();
-
-    fs::write(front_dir.join("token.rs"), TOKEN_RS).unwrap();
-    fs::write(front_dir.join("ast.rs"), AST_RS).unwrap();
-    fs::write(front_dir.join("lexer.rs"), LEXER_RS).unwrap();
-    fs::write(front_dir.join("parser.rs"), PARSER_RS).unwrap();
-    fs::write(front_dir.join("mod.rs"), "pub mod token;\npub mod ast;\npub mod lexer;\npub mod parser;\npub use self::token::*;\npub use self::ast::*;\npub use self::lexer::*;\npub use self::parser::*;\n").unwrap();
-
-    fs::write(sem_dir.join("types.rs"), TYPES_RS).unwrap();
-    fs::write(sem_dir.join("typechecker.rs"), TYPECHECKER_RS).unwrap();
-    fs::write(sem_dir.join("mod.rs"), "pub mod types;\npub mod typechecker;\npub use self::types::*;\npub use self::typechecker::*;\n").unwrap();
-
-    fs::write(run_dir.join("value.rs"), VALUE_RS).unwrap();
-    fs::write(run_dir.join("env.rs"), ENV_RS).unwrap();
-    fs::write(run_dir.join("stdlib.rs"), STDLIB_RS).unwrap();
-    fs::write(run_dir.join("interpreter.rs"), INTERPRETER_RS).unwrap();
-    fs::write(run_dir.join("webview.rs"), STUB_WEBVIEW_RS).unwrap();
-    fs::write(run_dir.join("mod.rs"), "pub mod value;\npub mod env;\npub mod stdlib;\npub mod interpreter;\npub mod webview;\npub use self::value::*;\npub use self::env::*;\npub use self::stdlib::*;\npub use self::interpreter::*;\npub use self::webview::*;\n").unwrap();
-
-    // 6. Collect and embed all project .alpha files (including custom Core modules)
-    let mut embedded_files = Vec::new();
-    collect_alpha_files(search_dir, search_dir, &mut embedded_files)?;
-
-    let mut register_code = String::new();
-    for (rel_path, content) in &embedded_files {
-        let escaped_content = content.replace('\\', "\\\\").replace('"', "\\\"");
-        register_code.push_str(&format!(
-            "    interp.register_source_module(\"{}\", \"{}\");\n",
-            rel_path, escaped_content
-        ));
-        register_code.push_str(&format!(
-            "    interp.register_source_module(\"src/{}\", \"{}\");\n",
-            rel_path, escaped_content
-        ));
-    }
-
-    let escaped_source = source.replace('\\', "\\\\").replace('"', "\\\"");
-    let entry_file_name = entry_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "main.alpha".to_string());
-    let runner_code = format!(
-        r#"
-#![allow(unused_imports, dead_code)]
-mod diagnostics;
-mod frontend;
-mod semantics;
-mod runtime;
-
-const EMBEDDED_SOURCE: &str = "{source}";
-
-fn main() {{
-    let mut interp = runtime::interpreter::Interpreter::new();
-{register_code}
-    if let Err(e) = interp.eval_source(EMBEDDED_SOURCE, Some("{entry_file_name}")) {{
-        eprintln!("{{}}", e.format_with_source(EMBEDDED_SOURCE));
-        std::process::exit(1);
-    }}
-}}
-"#,
-        source = escaped_source,
-        entry_file_name = entry_file_name,
-        register_code = register_code
-    );
-
-    let runner_path = cache_dir.join("main.rs");
-    fs::write(&runner_path, runner_code).map_err(|e| {
-        AlphaError::runtime(format!("Failed to write compiler runner: {}", e), Span::default())
-    })?;
-
-    // 7. Invoke rustc to produce native executable
     let exe_name = if cfg!(windows) {
         format!("{}.exe", project_name)
     } else {
@@ -226,31 +105,172 @@ fn main() {{
     };
     let output_exe_path = build_dir.join(&exe_name);
 
-    println!("[Alpha] Compiling native binary '{}' via rustc...", exe_name);
-    let status = Command::new("rustc")
-        .arg("--edition=2024")
-        .arg("-O")
-        .arg(&runner_path)
-        .arg("-o")
-        .arg(&output_exe_path)
-        .status();
+    // 1. Direct LLVM IR Backend (Maximum performance directly via LLVM optimizer & Clang)
+    let clang_cmd = if Path::new(r"C:\Program Files\LLVM\bin\clang.exe").exists() {
+        r"C:\Program Files\LLVM\bin\clang.exe".to_string()
+    } else {
+        "clang".to_string()
+    };
 
-    match status {
-        Ok(s) if s.success() => {
-            // Clean up cache folder
-            let _ = fs::remove_dir_all(&cache_dir);
-            println!("[Alpha] Build successful! Output: {:?}", output_exe_path);
-            Ok(output_exe_path)
+    let rt_lib_name = if cfg!(windows) { "alpha_rt.lib" } else { "libalpha_rt.a" };
+    let mut rt_lib_path: Option<PathBuf> = None;
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let candidate = parent.join(rt_lib_name);
+            if candidate.exists() {
+                rt_lib_path = Some(candidate);
+            }
         }
-        Ok(s) => Err(AlphaError::runtime(
-            format!("rustc compilation failed with exit code: {:?}", s.code()),
-            Span::default(),
-        )),
-        Err(e) => Err(AlphaError::runtime(
-            format!("Failed to execute rustc compiler: {}. Make sure 'rustc' is in your PATH.", e),
-            Span::default(),
-        )),
     }
+
+    if rt_lib_path.is_none() {
+        if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+            let candidate = PathBuf::from(home).join(".cargo").join("bin").join(rt_lib_name);
+            if candidate.exists() {
+                rt_lib_path = Some(candidate);
+            }
+        }
+    }
+
+    if rt_lib_path.is_none() {
+        let candidate = PathBuf::from("target/release").join(rt_lib_name);
+        if candidate.exists() {
+            rt_lib_path = Some(candidate);
+        }
+    }
+
+    let mut llvm_cg = crate::backend::LlvmCodegen::new();
+    if let Ok(llvm_ir) = llvm_cg.generate_module(&program) {
+        let ll_path = cache_dir.join("program.ll");
+        if fs::write(&ll_path, &llvm_ir).is_ok() {
+            println!("[Alpha] Compiling native binary '{}' via direct LLVM Backend (-O3)...", exe_name);
+            let mut cmd = Command::new(&clang_cmd);
+            cmd.arg("-O3")
+                .arg(&ll_path);
+
+            if let Some(ref lib) = rt_lib_path {
+                cmd.arg(lib);
+                if cfg!(windows) {
+                    cmd.arg("-luserenv").arg("-lws2_32").arg("-lntdll");
+                } else {
+                    cmd.arg("-lpthread").arg("-ldl").arg("-lm");
+                }
+            }
+
+            cmd.arg("-o").arg(&output_exe_path);
+            let output = cmd.output();
+
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let _ = fs::remove_dir_all(&cache_dir);
+                    println!("[Alpha] Direct LLVM build successful! Output: {:?}", output_exe_path);
+                    return Ok(output_exe_path);
+                }
+            }
+        }
+    }
+
+    // 2. Standalone Alpha Bundle: Full runtime engine with Webview (tao + wry), networking, and all modules
+    println!("[Alpha] Packaging native binary '{}' with full runtime...", exe_name);
+    let mut embedded_files = Vec::new();
+    collect_alpha_files(search_dir, search_dir, &mut embedded_files)?;
+
+    let entry_file = entry_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "main.alpha".to_string());
+
+    let bundle = crate::driver::project::AlphaProjectBundle {
+        entry_file,
+        source: source.clone(),
+        files: embedded_files,
+    };
+
+    let base_exe = find_alpha_base_exe()?;
+    create_bundled_exe(&base_exe, &output_exe_path, &bundle)?;
+
+    let _ = fs::remove_dir_all(&cache_dir);
+    println!("[Alpha] Build successful! Output: {:?}", output_exe_path);
+    Ok(output_exe_path)
+}
+
+fn find_alpha_base_exe() -> Result<PathBuf, AlphaError> {
+    let exe_name = if cfg!(windows) { "alpha.exe" } else { "alpha" };
+
+    if let Ok(cur) = std::env::current_exe() {
+        if cur.file_name().map_or(false, |n| n.to_string_lossy().eq_ignore_ascii_case(exe_name)) {
+            return Ok(cur);
+        }
+        if let Some(parent) = cur.parent() {
+            let candidate = parent.join(exe_name);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
+        let candidate = PathBuf::from(home).join(".cargo").join("bin").join(exe_name);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    let candidate = PathBuf::from("target/release").join(exe_name);
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+
+    Err(AlphaError::runtime(
+        "Could not locate base 'alpha' executable for bundling.",
+        Span::default(),
+    ))
+}
+
+fn create_bundled_exe(
+    base_exe: &Path,
+    output_exe: &Path,
+    bundle: &crate::driver::project::AlphaProjectBundle,
+) -> Result<(), AlphaError> {
+    use std::io::Write;
+
+    if output_exe.exists() {
+        let _ = fs::remove_file(output_exe);
+    }
+
+    fs::copy(base_exe, output_exe).map_err(|e| {
+        AlphaError::runtime(
+            format!("Failed to copy base binary {:?} to {:?}: {}", base_exe, output_exe, e),
+            Span::default(),
+        )
+    })?;
+
+    let payload_bytes = serde_json::to_vec(bundle).map_err(|e| {
+        AlphaError::runtime(format!("Failed to serialize bundle: {}", e), Span::default())
+    })?;
+
+    let payload_len = payload_bytes.len() as u64;
+    let magic = b"ALPHA_BUNDLE_V1";
+
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(output_exe)
+        .map_err(|e| {
+            AlphaError::runtime(format!("Failed to open output exe for bundling: {}", e), Span::default())
+        })?;
+
+    file.write_all(&payload_bytes).map_err(|e| {
+        AlphaError::runtime(format!("Failed to write bundle payload: {}", e), Span::default())
+    })?;
+    file.write_all(&payload_len.to_le_bytes()).map_err(|e| {
+        AlphaError::runtime(format!("Failed to write bundle length: {}", e), Span::default())
+    })?;
+    file.write_all(magic).map_err(|e| {
+        AlphaError::runtime(format!("Failed to write bundle magic: {}", e), Span::default())
+    })?;
+
+    Ok(())
 }
 
 fn collect_alpha_files(

@@ -638,6 +638,7 @@ impl<'a> Lexer<'a> {
             "boolean" => TokenKind::TypeBoolean,
             "hexcolor" => TokenKind::TypeHexColor,
             "something" => TokenKind::TypeSomething,
+            "everything" => TokenKind::TypeEverything,
             "vect" => TokenKind::TypeVect,
             "map" => TokenKind::TypeMap,
             _ => TokenKind::Ident(text.clone()),

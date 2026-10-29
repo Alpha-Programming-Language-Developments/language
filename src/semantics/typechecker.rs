@@ -636,6 +636,52 @@ impl TypeChecker {
 
             }
 
+            "Core/ArenaAllocator.alpha" => {
+
+                self.scopes[0].symbols.insert(
+
+                    "mem".to_string(),
+
+                    SymbolInfo {
+
+                        ty: Type::Custom("mem".to_string()),
+
+                        is_const: true,
+
+                    },
+
+                );
+
+                self.scopes[0].symbols.insert(
+
+                    "Mem".to_string(),
+
+                    SymbolInfo {
+
+                        ty: Type::Custom("mem".to_string()),
+
+                        is_const: true,
+
+                    },
+
+                );
+
+                self.scopes[0].symbols.insert(
+
+                    "Mem.ArenaSector".to_string(),
+
+                    SymbolInfo {
+
+                        ty: Type::Custom("Mem.ArenaSector".to_string()),
+
+                        is_const: true,
+
+                    },
+
+                );
+
+            }
+
             _ => {}
 
         }
@@ -1297,6 +1343,8 @@ impl TypeChecker {
                         || norm == "Core/Json.alpha"
 
                         || norm == "Core/Webview.alpha"
+
+                        || norm == "Core/ArenaAllocator.alpha"
 
                         || norm == "Core/Cli.alpha"
 
@@ -3726,6 +3774,62 @@ impl TypeChecker {
 
                             };
 
+                        } else if custom_name == "mem" || custom_name == "Mem" || custom_name == "mem.arena" || custom_name == "Mem.Arena" {
+
+                            for a in args {
+
+                                self.check_expr(a)?;
+
+                            }
+
+                            return match method.as_str() {
+
+                                "allocate" => Ok(Type::Custom("Mem.ArenaSector".to_string())),
+
+                                _ => Ok(Type::Something),
+
+                            };
+
+                        } else if custom_name == "Mem.ArenaSector" {
+
+                            for a in args {
+
+                                self.check_expr(a)?;
+
+                            }
+
+                            return match method.as_str() {
+
+                                "insert" => {
+
+                                    if args.is_empty() {
+
+                                        return Err(AlphaError::type_error("sector.insert() expects 1 argument", *span));
+
+                                    }
+
+                                    let arg_ty = self.check_expr(&args[0])?;
+
+                                    if arg_ty == Type::Nothing {
+
+                                        return Err(AlphaError::type_error("Cannot insert 'nothing' into arena sector (sector.insert accepts 'everything')", args[0].span()));
+
+                                    }
+
+                                    Ok(Type::Nothing)
+
+                                }
+
+                                "reset" => Ok(Type::Nothing),
+
+                                "count" => Ok(Type::Int),
+
+                                "allocated" => Ok(Type::Int),
+
+                                _ => Ok(Type::Something),
+
+                            };
+
                         } else if custom_name == "Io" {
 
                             for a in args {
@@ -3951,6 +4055,10 @@ impl TypeChecker {
                     } else if name == "Fs.Dir" && member == "file" {
 
                         return Ok(Type::Custom("Fs.DirFile".to_string()));
+
+                    } else if (name == "mem" || name == "Mem") && (member == "arena" || member == "Arena") {
+
+                        return Ok(Type::Custom("mem.arena".to_string()));
 
                     }
 

@@ -326,6 +326,14 @@ impl Interpreter {
 
             }
 
+            "Core/ArenaAllocator.alpha" => {
+
+                self.env.define("mem", Value::BuiltinNamespace("mem".to_string()), true);
+
+                self.env.define("Mem", Value::BuiltinNamespace("mem".to_string()), true);
+
+            }
+
             _ => {}
 
         }
@@ -709,6 +717,8 @@ impl Interpreter {
                         && norm != "Core/Json.alpha"
 
                         && norm != "Core/Webview.alpha"
+
+                        && norm != "Core/ArenaAllocator.alpha"
 
                         && norm != "Core/Cli.alpha"
 
@@ -2558,7 +2568,7 @@ impl Interpreter {
 
                 if let Some(val) = self.env.get(name) {
 
-                    Ok(val)
+                    val.deref_arena(*span)
 
                 } else if let Some(sf) = self.lookup_function(name) {
 
@@ -3464,6 +3474,94 @@ impl Interpreter {
 
 
 
+                    Value::ArenaSector(sector_rc) => match method.as_str() {
+
+                        "insert" => {
+
+                            if args.is_empty() {
+
+                                return Err(AlphaError::runtime("sector.insert() expects 1 argument", *span));
+
+                            }
+
+                            let val_to_store = if let Expr::Variable(var_name, vspan) = &args[0] {
+
+                                let cur = self.env.get(var_name).ok_or_else(|| {
+
+                                    AlphaError::runtime(format!("Undefined variable '{}'", var_name), *vspan)
+
+                                })?;
+
+                                let derefed = cur.deref_arena(*vspan)?;
+
+                                if derefed.is_nothing() {
+
+                                    return Err(AlphaError::runtime("Cannot insert 'nothing' into arena sector (sector.insert accepts 'everything')", *span));
+
+                                }
+
+                                let slot = sector_rc.borrow_mut().insert_value(derefed.clone());
+
+                                let current_gen = sector_rc.borrow().generation;
+
+                                self.env.assign(var_name, Value::ArenaRef {
+
+                                    sector: sector_rc.clone(),
+
+                                    slot,
+
+                                    generation: current_gen,
+
+                                }).map_err(|e| AlphaError::runtime(e, *vspan))?;
+
+                                derefed
+
+                            } else {
+
+                                let derefed = evaluated_args[0].deref_arena(*span)?;
+
+                                if derefed.is_nothing() {
+
+                                    return Err(AlphaError::runtime("Cannot insert 'nothing' into arena sector (sector.insert accepts 'everything')", *span));
+
+                                }
+
+                                sector_rc.borrow_mut().insert_value(derefed.clone());
+
+                                derefed
+
+                            };
+
+                            let _ = val_to_store;
+
+                            Ok(Value::Nothing)
+
+                        }
+
+                        "reset" => {
+
+                            sector_rc.borrow_mut().reset();
+
+                            Ok(Value::Nothing)
+
+                        }
+
+                        "count" => Ok(Value::Int(sector_rc.borrow().storage.len() as i64)),
+
+                        "allocated" => Ok(Value::Int(sector_rc.borrow().allocated_bytes as i64)),
+
+                        _ => Err(AlphaError::runtime(
+
+                            format!("Unknown method '{}' on Mem.ArenaSector", method),
+
+                            *span,
+
+                        )),
+
+                    }
+
+
+
                     Value::BuiltinNamespace(name) => {
 
                         if let Some(struct_name) = name.strip_prefix("structure:") {
@@ -4120,6 +4218,28 @@ impl Interpreter {
 
                             }
 
+                        } else if name == "mem" || name == "Mem" || name == "mem.arena" || name == "Mem.Arena" {
+
+                            match method.as_str() {
+
+                                "allocate" => {
+
+                                    use std::sync::atomic::{AtomicUsize, Ordering};
+
+                                    static NEXT_SECTOR_ID: AtomicUsize = AtomicUsize::new(1);
+
+                                    let id = NEXT_SECTOR_ID.fetch_add(1, Ordering::Relaxed);
+
+                                    let sec = crate::runtime::value::ArenaSectorData::new(id);
+
+                                    Ok(Value::ArenaSector(Rc::new(RefCell::new(sec))))
+
+                                }
+
+                                _ => Err(AlphaError::runtime(format!("Unknown method '{}' on mem.arena", method), *span)),
+
+                            }
+
                         } else if name.starts_with("module:") {
 
                             let mod_name = &name["module:".len()..];
@@ -4271,6 +4391,12 @@ impl Interpreter {
                                 return Ok(Value::String(dir.to_string_lossy().to_string()));
 
                             }
+
+                        }
+
+                        if (ns == "mem" || ns == "Mem") && (member == "arena" || member == "Arena") {
+
+                            return Ok(Value::BuiltinNamespace("mem.arena".to_string()));
 
                         }
 

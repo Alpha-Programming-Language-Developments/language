@@ -12,7 +12,8 @@ pub enum Type {
     Char,
     Boolean,
     HexColor,
-    Something, // Any type except nothing
+    Something, // Any type except nothing (inferred/dynamic)
+    Everything, // Universal static type (accepts any value except nothing; allowed in strict mode)
     Nothing,   // Absence of value
     Vect(Box<Type>),
     Map(Box<Type>, Box<Type>),
@@ -37,8 +38,18 @@ impl Type {
             return *self != Type::Nothing;
         }
 
+        // 'everything' as target accepts anything except 'nothing'
+        if *target == Type::Everything {
+            return *self != Type::Nothing;
+        }
+
         // 'something' as source can be dynamically allowed if permissive
         if *self == Type::Something && *target != Type::Nothing {
+            return true;
+        }
+
+        // 'everything' as source can be assigned to 'something'
+        if *self == Type::Everything && *target == Type::Something {
             return true;
         }
 
@@ -109,6 +120,7 @@ impl fmt::Display for Type {
             Type::Boolean => write!(f, "boolean"),
             Type::HexColor => write!(f, "hexcolor"),
             Type::Something => write!(f, "something"),
+            Type::Everything => write!(f, "everything"),
             Type::Nothing => write!(f, "nothing"),
             Type::Vect(inner) => write!(f, "vect<{}>", inner),
             Type::Map(k, v) => write!(f, "map<{}, {}>", k, v),

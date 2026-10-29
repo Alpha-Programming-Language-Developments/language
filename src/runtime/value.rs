@@ -25,6 +25,39 @@ pub struct StructureInstance {
 }
 
 #[derive(Debug, Clone)]
+pub struct ArenaSectorData {
+    pub id: usize,
+    pub generation: usize,
+    pub storage: Vec<Value>,
+    pub allocated_bytes: usize,
+}
+
+impl ArenaSectorData {
+    pub fn new(id: usize) -> Self {
+        Self {
+            id,
+            generation: 1,
+            storage: Vec::new(),
+            allocated_bytes: 0,
+        }
+    }
+
+    pub fn insert_value(&mut self, val: Value) -> usize {
+        let size = val.estimated_size_bytes();
+        self.allocated_bytes += size;
+        let slot = self.storage.len();
+        self.storage.push(val);
+        slot
+    }
+
+    pub fn reset(&mut self) {
+        self.storage.clear();
+        self.allocated_bytes = 0;
+        self.generation += 1;
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Unt(u64),
@@ -37,12 +70,18 @@ pub enum Value {
     Map(Rc<RefCell<HashMap<ValueKey, Value>>>),
     IoFile(Rc<RefCell<IoFileHandle>>),
     FsDir(Rc<RefCell<FsDirHandle>>),
-    BuiltinNamespace(String), // "Io", "Fs", "env", "dir.file"
+    BuiltinNamespace(String), // "Io", "Fs", "env", "dir.file", "mem"
     Function(FunctionDecl),
     StructureInstance(StructureInstance),
     Tuple(Vec<Value>),
     HexColor(String),
     Block(Block),
+    ArenaSector(Rc<RefCell<ArenaSectorData>>),
+    ArenaRef {
+        sector: Rc<RefCell<ArenaSectorData>>,
+        slot: usize,
+        generation: usize,
+    },
     EnumVariant {
         enum_name: String,
         variant: String,
@@ -158,7 +197,40 @@ impl Value {
             Value::Tuple(_) => "tuple",
             Value::HexColor(_) => "hexcolor",
             Value::Block(_) => "block",
+            Value::ArenaSector(_) => "Mem.ArenaSector",
+            Value::ArenaRef { .. } => "arena_ref",
             Value::EnumVariant { .. } => "enum",
+        }
+    }
+
+    pub fn estimated_size_bytes(&self) -> usize {
+        match self {
+            Value::Int(_) | Value::Unt(_) | Value::Float(_) | Value::Boolean(_) | Value::Char(_) => 8,
+            Value::Nothing => 0,
+            Value::String(s) => s.len() + 24,
+            Value::HexColor(h) => h.len() + 24,
+            Value::Tuple(t) => t.len() * 16 + 16,
+            Value::Vect(v) => v.borrow().len() * 16 + 24,
+            Value::Map(m) => m.borrow().len() * 48 + 32,
+            Value::StructureInstance(s) => s.fields.borrow().len() * 32 + 32,
+            Value::ArenaRef { .. } => 24,
+            _ => 16,
+        }
+    }
+
+    pub fn deref_arena(&self, span: crate::diagnostics::error::Span) -> Result<Value, crate::diagnostics::error::AlphaError> {
+        match self {
+            Value::ArenaRef { sector, slot, generation } => {
+                let sec = sector.borrow();
+                if sec.generation != *generation || *slot >= sec.storage.len() {
+                    return Err(crate::diagnostics::error::AlphaError::runtime(
+                        "Arena memory error: Object was deallocated when arena sector was reset (Use-After-Free prevented)",
+                        span,
+                    ));
+                }
+                sec.storage[*slot].deref_arena(span)
+            }
+            other => Ok(other.clone()),
         }
     }
 
@@ -216,6 +288,11 @@ impl PartialEq for Value {
             }
             (Value::Tuple(a), Value::Tuple(b)) => a == b,
             (Value::HexColor(a), Value::HexColor(b)) => a.eq_ignore_ascii_case(b),
+            (Value::ArenaSector(a), Value::ArenaSector(b)) => Rc::ptr_eq(a, b) || a.borrow().id == b.borrow().id,
+            (
+                Value::ArenaRef { sector: s1, slot: sl1, generation: g1 },
+                Value::ArenaRef { sector: s2, slot: sl2, generation: g2 },
+            ) => Rc::ptr_eq(s1, s2) && sl1 == sl2 && g1 == g2,
             (
                 Value::EnumVariant { enum_name: e1, variant: v1, .. },
                 Value::EnumVariant { enum_name: e2, variant: v2, .. },
@@ -272,6 +349,15 @@ impl fmt::Display for Value {
                 write!(f, "({})", strs.join(", "))
             }
             Value::HexColor(h) => write!(f, "#({})", h),
+            Value::ArenaSector(sec) => write!(f, "Mem.ArenaSector(id={}, count={}, bytes={})", sec.borrow().id, sec.borrow().storage.len(), sec.borrow().allocated_bytes),
+            Value::ArenaRef { sector, slot, generation } => {
+                let sec = sector.borrow();
+                if sec.generation == *generation && *slot < sec.storage.len() {
+                    write!(f, "{}", sec.storage[*slot])
+                } else {
+                    write!(f, "<deallocated arena object>")
+                }
+            }
             Value::EnumVariant { enum_name, variant, .. } => write!(f, "{}.{}", enum_name, variant),
             Value::Block(_) => write!(f, "<block>"),
         }

@@ -14,7 +14,8 @@
 - "string" — строка.
 - "char" — один символ.
 - "boolean" — логическое значение.
-- "something" — универсальный или неопределённый тип.
+- "something" — авто-тип данных (в строгом режиме запрещён).
+- "everything" — универсальный тип объединения всех типов данных языка (принимает всё кроме `nothing`, разрешён в строгом режиме).
 - "nothing" — отсутствие значения.
 - "vect<T>" — динамический массив элементов типа "T".
 - "map<K, V>" — хэш-таблица с ключами типа "K" и значениями типа "V".
@@ -955,4 +956,50 @@ import something
 import toml
 ```
 При создании нового проекта (`alpha here`) файл `packages.alpaks` генерируется автоматически.
+
+## 19. Аренная память (`Core/ArenaAllocator`) и тип `everything`
+
+### 19.1 Тип данных `everything`
+Тип данных `everything` объединяет абсолютно все типы данных языка (числа, строки, структуры, массивы, хэшмапы и т.д.) за одним исключением: он **не принимает `nothing`**.
+В отличие от `something` (который является динамическим авто-типом и запрещён в строгом режиме `@strict`), тип `everything` **полностью разрешён в `@strict`**.
+
+```alpha
+@strict
+
+var a: everything = 42
+var b: everything = "Строка"
+var c: everything = true
+
+// Ошибка компиляции:
+// var err: everything = nothing
+```
+
+### 19.2 Аренный аллокатор памяти (`Core/ArenaAllocator`)
+Аренная память позволяет выделить сектор памяти (`Mem.ArenaSector`), переместить в него объекты и переменные, а затем в нужный момент освободить весь сектор одной операцией:
+
+```alpha
+import Core/ArenaAllocator
+
+// Выделение аренного сектора памяти
+var sector: Mem.ArenaSector = mem.arena.allocate()
+
+var user_data: string = "Конфиденциальные данные"
+
+// Перемещение объекта в аренный сектор:
+sector.insert(user_data)
+
+// Переменная user_data доступна и работает как обычно:
+print(user_data)
+print(sector.count())     // 1
+print(sector.allocated()) // размер в байтах
+
+// Очистка и освобождение всей арены:
+sector.reset()
+
+print(sector.count())     // 0
+
+// Любое последующее обращение к user_data предотвращает Use-After-Free:
+// print(user_data) -> Ошибка: Object was deallocated when arena sector was reset
+```
+
 

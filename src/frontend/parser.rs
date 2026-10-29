@@ -197,6 +197,7 @@ impl Parser {
                     | TokenKind::TypeBoolean
                     | TokenKind::TypeHexColor
                     | TokenKind::TypeSomething
+                    | TokenKind::TypeEverything
                     | TokenKind::TypeNothing
                     | TokenKind::TypeVect
                     | TokenKind::TypeMap => {
@@ -569,6 +570,7 @@ impl Parser {
             TokenKind::TypeBoolean => Ok(Type::Boolean),
             TokenKind::TypeHexColor => Ok(Type::HexColor),
             TokenKind::TypeSomething => Ok(Type::Something),
+            TokenKind::TypeEverything => Ok(Type::Everything),
             TokenKind::TypeNothing | TokenKind::Nothing => Ok(Type::Nothing),
             TokenKind::TypeVect => {
                 self.expect(&TokenKind::Less)?;
@@ -1521,7 +1523,7 @@ impl Parser {
             }
 
             TokenKind::Ident(name) => Ok(Expr::Variable(name, tok.span)),
-            TokenKind::Schedule | TokenKind::Verify | TokenKind::System | TokenKind::TypeSomething | TokenKind::TypeNothing => Ok(Expr::Variable(tok.text, tok.span)),
+            TokenKind::Schedule | TokenKind::Verify | TokenKind::System | TokenKind::TypeSomething | TokenKind::TypeEverything | TokenKind::TypeNothing => Ok(Expr::Variable(tok.text, tok.span)),
 
             TokenKind::LParen => {
                 let start_span = tok.span;
@@ -1645,6 +1647,7 @@ impl Parser {
             | TokenKind::Verify
             | TokenKind::System
             | TokenKind::TypeSomething
+            | TokenKind::TypeEverything
             | TokenKind::TypeNothing => Ok(tok),
             _ => Err(AlphaError::parse(
                 format!("Expected identifier, found '{}'", tok.text),
@@ -1671,6 +1674,7 @@ impl Parser {
             | TokenKind::TypeBoolean
             | TokenKind::TypeHexColor
             | TokenKind::TypeSomething
+            | TokenKind::TypeEverything
             | TokenKind::TypeNothing
             | TokenKind::TypeVect
             | TokenKind::TypeMap => Ok(tok),
