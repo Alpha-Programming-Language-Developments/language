@@ -86,6 +86,8 @@ pub struct TypeChecker {
 
     pub imported_core: HashSet<String>,
 
+    pub current_web_base: Option<String>,
+
 }
 
 
@@ -119,6 +121,8 @@ impl TypeChecker {
             strict_from_line: None,
 
             imported_core: HashSet::new(),
+
+            current_web_base: None,
 
         };
 
@@ -1382,6 +1386,20 @@ impl TypeChecker {
 
                 }
 
+
+
+                if let Some(web_base) = &self.current_web_base {
+
+                    if !path_str.starts_with("Core/") && !path_str.starts_with("Core\\") {
+
+                        let full_url = format!("{}{}", web_base, path_str);
+
+                        return self.check_web_module(&full_url, import.span);
+
+                    }
+
+                }
+
             }
 
             _ => {}
@@ -1544,27 +1562,45 @@ impl TypeChecker {
 
     fn check_web_module(&mut self, url: &str, span: Span) -> Result<(), AlphaError> {
 
-        if self.loaded_files.contains(url) {
+        let norm_url = crate::runtime::stdlib::normalize_web_url(url);
+
+        if self.loaded_files.contains(&norm_url) {
 
             return Ok(());
 
         }
 
-        self.loaded_files.insert(url.to_string());
+        self.loaded_files.insert(norm_url.clone());
 
 
 
-        let source = crate::runtime::stdlib::fetch_web_module(url)
+        let source = crate::runtime::stdlib::fetch_web_module(&norm_url)
 
             .map_err(|e| AlphaError::compile(e, span))?;
 
         let mut lexer = Lexer::new(&source);
 
-        let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
+        let tokens = lexer.tokenize().map_err(|e| e.with_file(&norm_url))?;
 
         let mut parser = Parser::new(tokens);
 
-        let program = parser.parse_program().map_err(|e| e.with_file(url))?;
+        let program = parser.parse_program().map_err(|e| e.with_file(&norm_url))?;
+
+
+
+        let old_web_base = self.current_web_base.clone();
+
+        let base_url = if let Some(last_slash) = norm_url.rfind('/') {
+
+            norm_url[..=last_slash].to_string()
+
+        } else {
+
+            norm_url.clone()
+
+        };
+
+        self.current_web_base = Some(base_url);
 
 
 
@@ -1573,6 +1609,10 @@ impl TypeChecker {
             self.check_import(sub_import)?;
 
         }
+
+
+
+        self.current_web_base = old_web_base;
 
 
 

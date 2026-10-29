@@ -1493,6 +1493,27 @@ function main() [public, nothing] {}
 }
 
 #[test]
+fn test_packages_alpaks_formats_and_github_normalization() {
+    let content = r#"
+# Standard web:: syntax
+"webalph_raw" = import web::"https://raw.githubusercontent.com/Alpha-Programming-Language-Developments/webalph/main/src/lib.alpha"
+
+# Direct URL without web:: and with GitHub blob URL
+"webalph" = import "https://github.com/Alpha-Programming-Language-Developments/webalph/blob/main/src/lib.alpha"
+"#;
+
+    let map = alpha_lang::runtime::stdlib::parse_packages_alpaks(content);
+    assert_eq!(
+        map.get("webalph_raw"),
+        Some(&"https://raw.githubusercontent.com/Alpha-Programming-Language-Developments/webalph/main/src/lib.alpha".to_string())
+    );
+    assert_eq!(
+        map.get("webalph"),
+        Some(&"https://raw.githubusercontent.com/Alpha-Programming-Language-Developments/webalph/main/src/lib.alpha".to_string())
+    );
+}
+
+#[test]
 fn test_repeat_range_loop_without_variable() {
     let source = r#"
 var counter: int = 0

@@ -88,6 +88,8 @@ pub struct Interpreter {
 
     pub imported_core: HashSet<String>,
 
+    pub current_web_base: Option<String>,
+
     pub webview_config: WebviewWindowConfig,
 
     pub webview_on_message: Option<FunctionDecl>,
@@ -129,6 +131,8 @@ impl Interpreter {
             working_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
 
             imported_core: HashSet::new(),
+
+            current_web_base: None,
 
             webview_config: WebviewWindowConfig::default(),
 
@@ -746,6 +750,20 @@ impl Interpreter {
 
 
 
+                if let Some(web_base) = &self.current_web_base {
+
+                    if !path_str.starts_with("Core/") && !path_str.starts_with("Core\\") {
+
+                        let full_url = format!("{}{}", web_base, path_str);
+
+                        return self.load_web_module(&full_url, import.span);
+
+                    }
+
+                }
+
+
+
                 let file_path = if self.source_modules.contains_key(path_str)
 
                     || self.source_modules.contains_key(&format!("src/{}", path_str))
@@ -1120,29 +1138,47 @@ impl Interpreter {
 
     pub fn load_web_module(&mut self, url: &str, span: Span) -> Result<(), AlphaError> {
 
-        if self.loaded_files.contains(url) {
+        let norm_url = crate::runtime::stdlib::normalize_web_url(url);
+
+        if self.loaded_files.contains(&norm_url) {
 
             return Ok(());
 
         }
 
-        self.loaded_files.insert(url.to_string());
+        self.loaded_files.insert(norm_url.clone());
 
-        println!("[Alpha Notice] Loaded remote module: {}", url);
+        println!("[Alpha Notice] Loaded remote module: {}", norm_url);
 
 
 
-        let source = crate::runtime::stdlib::fetch_web_module(url)
+        let source = crate::runtime::stdlib::fetch_web_module(&norm_url)
 
             .map_err(|e| AlphaError::runtime(e, span))?;
 
         let mut lexer = Lexer::new(&source);
 
-        let tokens = lexer.tokenize().map_err(|e| e.with_file(url))?;
+        let tokens = lexer.tokenize().map_err(|e| e.with_file(&norm_url))?;
 
         let mut parser = Parser::new(tokens);
 
-        let program = parser.parse_program().map_err(|e| e.with_file(url))?;
+        let program = parser.parse_program().map_err(|e| e.with_file(&norm_url))?;
+
+
+
+        let old_web_base = self.current_web_base.clone();
+
+        let base_url = if let Some(last_slash) = norm_url.rfind('/') {
+
+            norm_url[..=last_slash].to_string()
+
+        } else {
+
+            norm_url.clone()
+
+        };
+
+        self.current_web_base = Some(base_url);
 
 
 
@@ -1151,6 +1187,10 @@ impl Interpreter {
             self.execute_import(import)?;
 
         }
+
+
+
+        self.current_web_base = old_web_base;
 
 
 

@@ -437,34 +437,58 @@ fn decode_terminal_bytes(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).to_string()
 }
 
+/// Normalizes web module URLs (e.g. converts GitHub blob/raw URLs to raw.githubusercontent.com)
+pub fn normalize_web_url(url: &str) -> String {
+    let trimmed = url.trim().trim_matches('"').trim_matches('\'').trim();
+    if trimmed.starts_with("https://github.com/") || trimmed.starts_with("http://github.com/") {
+        if trimmed.contains("/blob/") {
+            trimmed
+                .replace("https://github.com/", "https://raw.githubusercontent.com/")
+                .replace("http://github.com/", "https://raw.githubusercontent.com/")
+                .replace("/blob/", "/")
+        } else if trimmed.contains("/raw/") {
+            trimmed
+                .replace("https://github.com/", "https://raw.githubusercontent.com/")
+                .replace("http://github.com/", "https://raw.githubusercontent.com/")
+                .replace("/raw/", "/")
+        } else {
+            trimmed.to_string()
+        }
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Downloads a remote Alpha module from a URL.
 pub fn fetch_web_module(url: &str) -> Result<String, String> {
     use std::process::Command;
 
+    let target_url = normalize_web_url(url);
+
     #[cfg(target_os = "windows")]
     let res = Command::new("curl.exe")
-        .args(["-s", "-L", "-A", "Mozilla/5.0", url])
+        .args(["-s", "-L", "-A", "Mozilla/5.0", &target_url])
         .output();
 
     #[cfg(not(target_os = "windows"))]
     let res = Command::new("curl")
-        .args(["-s", "-L", "-A", "Mozilla/5.0", url])
+        .args(["-s", "-L", "-A", "Mozilla/5.0", &target_url])
         .output();
 
     match res {
         Ok(out) if out.status.success() => {
             let body = String::from_utf8_lossy(&out.stdout).to_string();
             if body.trim().is_empty() {
-                Err(format!("Empty response from web module '{}'", url))
+                Err(format!("Empty response from web module '{}'", target_url))
             } else {
                 Ok(body)
             }
         }
         Ok(out) => {
             let err = String::from_utf8_lossy(&out.stderr);
-            Err(format!("Failed to fetch web module '{}': {}", url, err))
+            Err(format!("Failed to fetch web module '{}': {}", target_url, err))
         }
-        Err(e) => Err(format!("Could not execute curl to download web module '{}': {}", url, e)),
+        Err(e) => Err(format!("Could not execute curl to download web module '{}': {}", target_url, e)),
     }
 }
 
@@ -476,6 +500,8 @@ pub fn format_hex_paint(text: &str, hex: &str) -> String {
 
 /// Parses the contents of a `packages.alpaks` file:
 /// "alias" = import web::"url"
+/// or
+/// "alias" = import "url"
 pub fn parse_packages_alpaks(content: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for line in content.lines() {
@@ -487,10 +513,13 @@ pub fn parse_packages_alpaks(content: &str) -> HashMap<String, String> {
             let alias = left.trim().trim_matches('"').trim_matches('\'').trim().to_string();
             let right_trimmed = right.trim();
             if let Some(url_part) = right_trimmed.strip_prefix("import") {
-                let url_part = url_part.trim();
-                if let Some(url) = url_part.strip_prefix("web::") {
-                    let cleaned_url = url.trim().trim_matches('"').trim_matches('\'').to_string();
-                    map.insert(alias, cleaned_url);
+                let mut url_part = url_part.trim();
+                if let Some(web_part) = url_part.strip_prefix("web::") {
+                    url_part = web_part.trim();
+                }
+                let cleaned_url = url_part.trim_matches('"').trim_matches('\'').trim().to_string();
+                if !cleaned_url.is_empty() {
+                    map.insert(alias, normalize_web_url(&cleaned_url));
                 }
             }
         }
