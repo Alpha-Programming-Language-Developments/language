@@ -40,6 +40,7 @@ pub enum TokenKind {
     Enum,
     Module,
     AtStrict,
+    HashTypechecked,
 
     // Literals
     IntLit(i64),
@@ -169,6 +170,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Enum => write!(f, "enum"),
             TokenKind::Module => write!(f, "module"),
             TokenKind::AtStrict => write!(f, "@strict"),
+            TokenKind::HashTypechecked => write!(f, "#typechecked"),
             TokenKind::IntLit(n) => write!(f, "{}", n),
             TokenKind::FloatLit(n) => write!(f, "{}", n),
             TokenKind::HexColorLit(h) => write!(f, "#({})", h),

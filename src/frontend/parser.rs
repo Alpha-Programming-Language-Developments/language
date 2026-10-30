@@ -329,6 +329,7 @@ impl Parser {
         // Metadata brackets: [visibility, return_type] or [visibility] or [return_type]
         let mut visibility = Visibility::Here;
         let mut return_type = Type::Nothing;
+        let mut is_typechecked = self.match_token(&TokenKind::HashTypechecked);
 
         if self.match_token(&TokenKind::LBracket) {
             // First item could be visibility (here/public) or a type
@@ -346,7 +347,14 @@ impl Parser {
                 // Must be return type directly
                 return_type = self.parse_type()?;
             }
+            if self.match_token(&TokenKind::Comma) && self.match_token(&TokenKind::HashTypechecked) {
+                is_typechecked = true;
+            }
             self.expect(&TokenKind::RBracket)?;
+        }
+
+        if !is_typechecked {
+            is_typechecked = self.match_token(&TokenKind::HashTypechecked);
         }
 
         let body = self.parse_block()?;
@@ -357,6 +365,7 @@ impl Parser {
             params,
             visibility,
             return_type,
+            is_typechecked,
             body,
             span: start_span.merge(end_span),
         })
@@ -436,6 +445,7 @@ impl Parser {
         let mut is_static = false;
         let mut visibility = Visibility::Public;
         let mut return_type = Type::Nothing;
+        let mut is_typechecked = self.match_token(&TokenKind::HashTypechecked);
 
         if self.match_token(&TokenKind::LBracket) {
             while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
@@ -447,12 +457,18 @@ impl Parser {
                     visibility = Visibility::Public;
                 } else if self.match_token(&TokenKind::Here) {
                     visibility = Visibility::Here;
+                } else if self.match_token(&TokenKind::HashTypechecked) {
+                    is_typechecked = true;
                 } else {
                     return_type = self.parse_type()?;
                 }
                 self.match_token(&TokenKind::Comma);
             }
             self.expect(&TokenKind::RBracket)?;
+        }
+
+        if !is_typechecked {
+            is_typechecked = self.match_token(&TokenKind::HashTypechecked);
         }
 
         let body = self.parse_block()?;
@@ -464,6 +480,7 @@ impl Parser {
             visibility,
             return_type,
             params,
+            is_typechecked,
             body,
             span: start_span.merge(end_span),
         })

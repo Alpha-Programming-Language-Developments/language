@@ -82,11 +82,27 @@ fn build_custom(
     let program = parser.parse_program().map_err(|e| e.with_file(entry_path.to_string_lossy()))?;
 
     // 3. Type Check
-    println!("[Alpha] Type checking program...");
-    let mut typechecker = TypeChecker::new()
-        .with_file(entry_path.to_string_lossy())
-        .with_working_dir(working_dir.to_path_buf());
-    typechecker.check_program(&program).map_err(|e| e.with_file(entry_path.to_string_lossy()))?;
+    let all_typechecked = !program.functions.is_empty()
+        && program.functions.iter().all(|f| f.is_typechecked);
+
+    if all_typechecked {
+        println!("[Alpha] Skipping type checking (#typechecked)...");
+        let mut typechecker = TypeChecker::new()
+            .with_file(entry_path.to_string_lossy())
+            .with_working_dir(working_dir.to_path_buf());
+        typechecker.check_typechecked_only(&program).map_err(|e| e.with_file(entry_path.to_string_lossy()))?;
+    } else {
+        let has_any_tc = program.functions.iter().any(|f| f.is_typechecked);
+        if has_any_tc {
+            println!("[Alpha] Type checking program (skipping #typechecked functions)...");
+        } else {
+            println!("[Alpha] Type checking program...");
+        }
+        let mut typechecker = TypeChecker::new()
+            .with_file(entry_path.to_string_lossy())
+            .with_working_dir(working_dir.to_path_buf());
+        typechecker.check_program(&program).map_err(|e| e.with_file(entry_path.to_string_lossy()))?;
+    }
 
     // 4. Prepare build folder
     fs::create_dir_all(build_dir).map_err(|e| {

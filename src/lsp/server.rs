@@ -959,6 +959,7 @@ impl LspServer {
             ("try catch", "try {\n\t$1\n} catch ${2:err} {\n\t$0\n}"),
             ("verify", "verify ${1:condition}, \"${2:error message}\""),
             ("@strict", "@strict\n"),
+            ("#typechecked", "#typechecked "),
         ];
         for (lbl, snip) in snippets {
             push_item(json!({
@@ -1061,6 +1062,7 @@ impl LspServer {
             "boolean" => "boolean",
             "hexcolor" => "hexcolor (`#(RRGGBB)`)",
             "@strict" => "@strict",
+            "#typechecked" | "typechecked" => "directive #typechecked (marks function as pre-checked, enforces strict mode rules, accelerates compilation)",
             "make schedule" | "schedule" => "make schedule { ... }",
             "check" => "check pattern matching",
             "Time" | "time" => "module Time",

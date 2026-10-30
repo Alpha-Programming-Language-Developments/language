@@ -268,9 +268,27 @@ impl<'a> Lexer<'a> {
                         span,
                         &self.source[start_pos..end_pos],
                     ));
+                } else if self.peek().map_or(false, is_ident_start) {
+                    let mut dir = String::new();
+                    while let Some(c) = self.peek() {
+                        if c.is_alphanumeric() || c == '_' {
+                            dir.push(c);
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    if dir == "typechecked" {
+                        let end_pos = self.current_byte_pos();
+                        let span = Span::new(start_line, start_col, start_pos, end_pos);
+                        return Ok(Token::new(TokenKind::HashTypechecked, span, "#typechecked"));
+                    } else {
+                        let span = Span::new(start_line, start_col, start_pos, self.current_byte_pos());
+                        return Err(AlphaError::lex(format!("Unknown directive '#{}'. Did you mean '#typechecked'?", dir), span));
+                    }
                 } else {
                     let span = Span::new(start_line, start_col, start_pos, self.current_byte_pos());
-                    return Err(AlphaError::lex("Unexpected character '#'. Hex colors must be written as '#(HEX)' e.g. '#(FFF00)'", span));
+                    return Err(AlphaError::lex("Unexpected character '#'. Hex colors must be written as '#(HEX)' e.g. '#(FFF00)', or directive '#typechecked'", span));
                 }
             }
 

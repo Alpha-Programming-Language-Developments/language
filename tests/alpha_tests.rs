@@ -1955,3 +1955,98 @@ var fail: string = secret
     let err = interp_uaf.execute_program(&prog_uaf, None).unwrap_err();
     assert!(err.to_string().contains("Arena memory error") || err.to_string().contains("Use-After-Free"));
 }
+
+#[test]
+fn test_typechecked_function_valid() {
+    let source = r#"
+function compute(x: int) [here, int] #typechecked {
+    var result: int = x + 42
+    return result
+}
+
+function name() [here, nothing] #typechecked {
+    var a: int = 10
+}
+
+function main() [public, int] {
+    name()
+    return compute(10)
+}
+"#;
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution should succeed");
+    assert_eq!(res, Value::Int(52));
+}
+
+#[test]
+fn test_typechecked_forbids_untyped_variable() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+function calc() [here, nothing] #typechecked {
+    var x = 10
+}
+"#;
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected error for untyped variable in #typechecked function");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("explicit type annotation"));
+}
+
+#[test]
+fn test_typechecked_forbids_something_and_nothing() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+function calc() [here, nothing] #typechecked {
+    var x: something = 10
+}
+"#;
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected error for 'something' in #typechecked function");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("forbidden"));
+
+    let source2 = r#"
+function calc(param: something) [here, nothing] #typechecked {}
+"#;
+    let errors2 = validate_alpha_code(source2);
+    assert!(!errors2.is_empty(), "Expected error for 'something' parameter in #typechecked function");
+    assert!(errors2[0].message.contains("[Strict Mode]") && errors2[0].message.contains("forbidden"));
+}
+
+#[test]
+fn test_typechecked_forbids_force_unwrap() {
+    use alpha_lang::lsp::server::validate_alpha_code;
+
+    let source = r#"
+function calc(x: int) [here, int] #typechecked {
+    var res: int = x!?
+    return res
+}
+"#;
+    let errors = validate_alpha_code(source);
+    assert!(!errors.is_empty(), "Expected error for force unwrap in #typechecked function");
+    assert!(errors[0].message.contains("[Strict Mode]") && errors[0].message.contains("Force unwrap"));
+}
+
+#[test]
+fn test_typechecked_attached_method() {
+    let source = r#"
+structure Calculator {
+    base: int,
+attach {
+    function add(amount: int) [nonstatic, public, int] #typechecked {
+        var total: int = this.base + amount
+        return total
+    }
+}
+}
+
+function main() [public, int] {
+    var calc: Calculator = make Calculator { base: 100 }
+    return calc.add(50)
+}
+"#;
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution should succeed");
+    assert_eq!(res, Value::Int(150));
+}

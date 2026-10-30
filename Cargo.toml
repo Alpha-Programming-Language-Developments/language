@@ -9,6 +9,9 @@ members = [
     ".",
     "crates/alpha_rt",
 ]
+exclude = [
+    "editors/zed-alpha",
+]
 
 [dependencies]
 toml = "0.8"

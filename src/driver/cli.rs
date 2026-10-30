@@ -292,9 +292,22 @@ fn check_file(path: &Path) -> Result<(), AlphaError> {
             typechecker = typechecker.with_working_dir(parent.to_path_buf());
         }
     }
-    match typechecker.check_program(&program) {
+    let all_typechecked = !program.functions.is_empty()
+        && program.functions.iter().all(|f| f.is_typechecked);
+
+    let check_res = if all_typechecked {
+        typechecker.check_typechecked_only(&program)
+    } else {
+        typechecker.check_program(&program)
+    };
+
+    match check_res {
         Ok(_) => {
-            println!("[Alpha Check] Syntax and type check passed for {:?}", path);
+            if all_typechecked {
+                println!("[Alpha Check] Syntax check passed (type checking skipped via #typechecked) for {:?}", path);
+            } else {
+                println!("[Alpha Check] Syntax and type check passed for {:?}", path);
+            }
             Ok(())
         }
         Err(e) => {

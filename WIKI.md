@@ -168,6 +168,15 @@ function get?user?name() [public, string] {
 }
 ```
 
+### `#typechecked` Directive
+The `#typechecked` directive marks a function or method as pre-verified by the programmer, skipping complex body type-checking to speed up compilation while enforcing `@strict` mode safety rules (explicit types, no `something`/`nothing` variables or force-unwraps):
+
+```alpha
+function name() [here, nothing] #typechecked {
+    var x: int = 10
+}
+```
+
 ---
 
 ## 7. Control Flow
@@ -751,6 +760,15 @@ function exists?() [public, boolean] {
 
 function user?has?access() [public, boolean] {
     return false
+}
+```
+
+### Директива `#typechecked`
+Директива `#typechecked` сообщает компилятору, что типы в теле функции уже проверены программистом, пропуская вывод типов для ускорения сборки, и при этом применяет к функции правила `@strict` (обязательная явная типизация переменных, запрет `something`/`nothing` для переменных и запрет force unwrap `!` / `!?`):
+
+```alpha
+function name() [here, nothing] #typechecked {
+    var x: int = 10
 }
 ```
 

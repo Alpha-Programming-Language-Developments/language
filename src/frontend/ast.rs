@@ -36,6 +36,7 @@ pub struct AttachedMethod {
     pub visibility: Visibility,
     pub return_type: Type,
     pub params: Vec<Param>,
+    pub is_typechecked: bool,
     pub body: Block,
     pub span: Span,
 }
@@ -71,6 +72,7 @@ pub struct FunctionDecl {
     pub params: Vec<Param>,
     pub visibility: Visibility,
     pub return_type: Type,
+    pub is_typechecked: bool,
     pub body: Block,
     pub span: Span,
 }

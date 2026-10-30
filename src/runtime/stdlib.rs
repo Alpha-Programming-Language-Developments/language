@@ -459,11 +459,42 @@ pub fn normalize_web_url(url: &str) -> String {
     }
 }
 
-/// Downloads a remote Alpha module from a URL.
+fn get_web_cache_dir() -> Option<std::path::PathBuf> {
+    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    let dir = std::path::PathBuf::from(home).join(".alpha").join("cache").join("modules");
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir)
+}
+
+fn url_to_cache_path(url: &str) -> Option<std::path::PathBuf> {
+    let dir = get_web_cache_dir()?;
+    let mut safe_name = String::new();
+    for c in url.chars() {
+        if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+            safe_name.push(c);
+        } else {
+            safe_name.push('_');
+        }
+    }
+    Some(dir.join(safe_name))
+}
+
+/// Downloads a remote Alpha module from a URL (with disk cache in ~/.alpha/cache/modules).
 pub fn fetch_web_module(url: &str) -> Result<String, String> {
     use std::process::Command;
 
     let target_url = normalize_web_url(url);
+
+    // 1. Check disk cache
+    if let Some(cache_path) = url_to_cache_path(&target_url) {
+        if cache_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cache_path) {
+                if !content.trim().is_empty() {
+                    return Ok(content);
+                }
+            }
+        }
+    }
 
     #[cfg(target_os = "windows")]
     let res = Command::new("curl.exe")
@@ -481,6 +512,9 @@ pub fn fetch_web_module(url: &str) -> Result<String, String> {
             if body.trim().is_empty() {
                 Err(format!("Empty response from web module '{}'", target_url))
             } else {
+                if let Some(cache_path) = url_to_cache_path(&target_url) {
+                    let _ = std::fs::write(&cache_path, &body);
+                }
                 Ok(body)
             }
         }

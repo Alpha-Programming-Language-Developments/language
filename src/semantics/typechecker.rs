@@ -698,6 +698,110 @@ impl TypeChecker {
 
 
 
+    pub fn check_typechecked_only(&mut self, program: &Program) -> Result<(), AlphaError> {
+        // Fast path for #typechecked: register local declarations without downloading remote imports
+        for st in &program.structures {
+            self.structures.insert(st.name.clone(), st.clone());
+            self.scopes[0].symbols.insert(
+                st.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(st.name.clone()),
+                    is_const: true,
+                },
+            );
+        }
+
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+            self.scopes[0].symbols.insert(
+                en.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(en.name.clone()),
+                    is_const: true,
+                },
+            );
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+        }
+
+        // Fast check only functions marked #typechecked
+        for func in &program.functions {
+            if func.is_typechecked {
+                self.enter_scope();
+                self.current_return_type = Some(func.return_type.clone());
+
+                if func.return_type == Type::Something || (func.return_type != Type::Nothing && self.contains_forbidden_strict_type(&func.return_type)) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, func.return_type),
+                        func.span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                }
+
+                for param in &func.params {
+                    if self.contains_forbidden_strict_type(&param.ty) {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                            param.span,
+                        ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                    }
+                    self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                }
+
+                self.check_typechecked_body(&func.body).map_err(|e| {
+                    if let Some(f) = &self.current_file {
+                        e.with_file(f)
+                    } else {
+                        e
+                    }
+                })?;
+
+                self.current_return_type = None;
+                self.exit_scope();
+            }
+        }
+
+        for st in &program.structures {
+            for method in &st.methods {
+                if method.is_typechecked {
+                    self.enter_scope();
+                    self.current_return_type = Some(method.return_type.clone());
+
+                    if method.return_type == Type::Something || (method.return_type != Type::Nothing && self.contains_forbidden_strict_type(&method.return_type)) {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Method '{}' cannot return forbidden type '{}'", method.name, method.return_type),
+                            method.span,
+                        ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                    }
+
+                    for param in &method.params {
+                        if self.contains_forbidden_strict_type(&param.ty) {
+                            return Err(AlphaError::type_error(
+                                format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                                param.span,
+                            ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                        }
+                        self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                    }
+
+                    self.check_typechecked_body(&method.body).map_err(|e| {
+                        if let Some(f) = &self.current_file {
+                            e.with_file(f)
+                        } else {
+                            e
+                        }
+                    })?;
+
+                    self.current_return_type = None;
+                    self.exit_scope();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn check_program(&mut self, program: &Program) -> Result<(), AlphaError> {
 
         for stmt in &program.statements {
@@ -973,69 +1077,48 @@ impl TypeChecker {
 
 
         // 4. Fifth pass: check function bodies
-
         for func in &program.functions {
-
             self.enter_scope();
-
             self.current_return_type = Some(func.return_type.clone());
 
-
-
-            if self.is_strict_at(func.span.line) && self.contains_forbidden_strict_type(&func.return_type) {
-
+            let is_strict = self.is_strict_at(func.span.line);
+            if (is_strict || func.is_typechecked) && (func.return_type == Type::Something || (func.return_type != Type::Nothing && self.contains_forbidden_strict_type(&func.return_type))) {
                 return Err(AlphaError::type_error(
-
                     format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, func.return_type),
-
                     func.span,
-
                 ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
-
             }
-
-
 
             for param in &func.params {
-
-                if self.is_strict_at(param.span.line) && self.contains_forbidden_strict_type(&param.ty) {
-
+                if (is_strict || func.is_typechecked) && self.contains_forbidden_strict_type(&param.ty) {
                     return Err(AlphaError::type_error(
-
                         format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
-
                         param.span,
-
                     ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
-
                 }
-
                 self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
-
             }
 
-
-
-            self.check_block(&func.body).map_err(|e| {
-
-                if let Some(f) = &self.current_file {
-
-                    e.with_file(f)
-
-                } else {
-
-                    e
-
-                }
-
-            })?;
-
-
+            if func.is_typechecked {
+                self.check_typechecked_body(&func.body).map_err(|e| {
+                    if let Some(f) = &self.current_file {
+                        e.with_file(f)
+                    } else {
+                        e
+                    }
+                })?;
+            } else {
+                self.check_block(&func.body).map_err(|e| {
+                    if let Some(f) = &self.current_file {
+                        e.with_file(f)
+                    } else {
+                        e
+                    }
+                })?;
+            }
 
             self.current_return_type = None;
-
             self.exit_scope();
-
         }
 
 
@@ -1045,99 +1128,105 @@ impl TypeChecker {
         let all_structures = self.structures.values().cloned().collect::<Vec<_>>();
 
         for st in all_structures {
-
             self.current_structure = Some(st.name.clone());
-
             for method in &st.methods {
-
                 self.enter_scope();
-
                 self.current_return_type = Some(method.return_type.clone());
 
-
+                let is_strict = self.is_strict_at(method.span.line);
+                if (is_strict || method.is_typechecked) && (method.return_type == Type::Something || (method.return_type != Type::Nothing && self.contains_forbidden_strict_type(&method.return_type))) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Method '{}' cannot return forbidden type '{}'", method.name, method.return_type),
+                        method.span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                }
 
                 if !method.is_static {
-
                     self.declare_variable("this", Type::Custom(st.name.clone()), false, method.span)?;
-
                 }
-
-
 
                 for param in &method.params {
-
+                    if (is_strict || method.is_typechecked) && self.contains_forbidden_strict_type(&param.ty) {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                            param.span,
+                        ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                    }
                     self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
-
                 }
 
-
-
-                self.check_block(&method.body).map_err(|e| {
-
-                    if let Some(f) = &self.current_file {
-
-                        e.with_file(f)
-
-                    } else {
-
-                        e
-
-                    }
-
-                })?;
-
-
+                if method.is_typechecked {
+                    self.check_typechecked_body(&method.body).map_err(|e| {
+                        if let Some(f) = &self.current_file {
+                            e.with_file(f)
+                        } else {
+                            e
+                        }
+                    })?;
+                } else {
+                    self.check_block(&method.body).map_err(|e| {
+                        if let Some(f) = &self.current_file {
+                            e.with_file(f)
+                        } else {
+                            e
+                        }
+                    })?;
+                }
 
                 self.current_return_type = None;
-
                 self.exit_scope();
-
             }
-
             self.current_structure = None;
-
         }
 
 
 
         // 6. Seventh pass: check module functions
-
         let all_modules = self.modules.values().cloned().collect::<Vec<_>>();
-
         for m in all_modules {
-
             for func in &m.functions {
-
                 self.enter_scope();
-
                 self.current_return_type = Some(func.return_type.clone());
 
-                for param in &func.params {
-
-                    self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
-
+                let is_strict = self.is_strict_at(func.span.line);
+                if (is_strict || func.is_typechecked) && (func.return_type == Type::Something || (func.return_type != Type::Nothing && self.contains_forbidden_strict_type(&func.return_type))) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, func.return_type),
+                        func.span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
                 }
 
-                self.check_block(&func.body).map_err(|e| {
-
-                    if let Some(f) = &self.current_file {
-
-                        e.with_file(f)
-
-                    } else {
-
-                        e
-
+                for param in &func.params {
+                    if (is_strict || func.is_typechecked) && self.contains_forbidden_strict_type(&param.ty) {
+                        return Err(AlphaError::type_error(
+                            format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                            param.span,
+                        ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
                     }
+                    self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                }
 
-                })?;
+                if func.is_typechecked {
+                    self.check_typechecked_body(&func.body).map_err(|e| {
+                        if let Some(f) = &self.current_file {
+                            e.with_file(f)
+                        } else {
+                            e
+                        }
+                    })?;
+                } else {
+                    self.check_block(&func.body).map_err(|e| {
+                        if let Some(f) = &self.current_file {
+                            e.with_file(f)
+                        } else {
+                            e
+                        }
+                    })?;
+                }
 
                 self.current_return_type = None;
-
                 self.exit_scope();
-
             }
-
         }
 
 
@@ -1932,6 +2021,258 @@ impl TypeChecker {
 
         Ok(())
 
+    }
+
+    fn check_typechecked_body(&mut self, block: &Block) -> Result<(), AlphaError> {
+        self.enter_scope();
+        for stmt in &block.statements {
+            self.check_typechecked_stmt(stmt)?;
+        }
+        self.exit_scope();
+        Ok(())
+    }
+
+    fn check_typechecked_stmt(&mut self, stmt: &Statement) -> Result<(), AlphaError> {
+        match stmt {
+            Statement::Var(var) => {
+                if !var.has_explicit_type {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Variable '{}' must have an explicit type annotation in #typechecked function", var.name),
+                        var.span,
+                    ).with_hint(format!("Specify an explicit type, e.g. 'var {}: <type> = ...'", var.name)));
+                }
+                if self.contains_forbidden_strict_type(&var.ty) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Variable '{}' cannot use forbidden type '{}' in #typechecked function", var.name, var.ty),
+                        var.span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                }
+                self.check_typechecked_expr(&var.init)?;
+                let _ = self.declare_variable(&var.name, var.ty.clone(), var.is_const, var.span);
+            }
+            Statement::VarTuple { names, types, init, span, .. } => {
+                if types.iter().any(|t| t.is_none()) {
+                    return Err(AlphaError::type_error(
+                        "[Strict Mode] Tuple variables must have explicit type annotations in #typechecked function",
+                        *span,
+                    ).with_hint("Annotate tuple types explicitly in strict mode"));
+                }
+                for (name, ty_opt) in names.iter().zip(types.iter()) {
+                    if let Some(ty) = ty_opt {
+                        if self.contains_forbidden_strict_type(ty) {
+                            return Err(AlphaError::type_error(
+                                format!("[Strict Mode] Tuple variable '{}' cannot use forbidden type '{}' in #typechecked function", name, ty),
+                                *span,
+                            ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                        }
+                        let _ = self.declare_variable(name, ty.clone(), false, *span);
+                    }
+                }
+                self.check_typechecked_expr(init)?;
+            }
+            Statement::Assign { target, value, .. } => {
+                self.check_typechecked_expr(target)?;
+                self.check_typechecked_expr(value)?;
+            }
+            Statement::IncDec { target, .. } => {
+                self.check_typechecked_expr(target)?;
+            }
+            Statement::If { condition, then_branch, elseif_branches, else_branch, .. } => {
+                self.check_typechecked_expr(condition)?;
+                self.check_typechecked_body(then_branch)?;
+                for (elif_cond, elif_body) in elseif_branches {
+                    self.check_typechecked_expr(elif_cond)?;
+                    self.check_typechecked_body(elif_body)?;
+                }
+                if let Some(else_b) = else_branch {
+                    self.check_typechecked_body(else_b)?;
+                }
+            }
+            Statement::Check { target, arms, .. } => {
+                self.check_typechecked_expr(target)?;
+                for arm in arms {
+                    match &arm.body {
+                        CheckBody::Block(b) => self.check_typechecked_body(b)?,
+                        CheckBody::Expr(e) => self.check_typechecked_expr(e)?,
+                    }
+                }
+            }
+            Statement::ForInfinite { body, .. } => {
+                self.check_typechecked_body(body)?;
+            }
+            Statement::ForCount { init, condition, step, body, .. } => {
+                if let Some(i) = init {
+                    self.check_typechecked_stmt(i)?;
+                }
+                if let Some(c) = condition {
+                    self.check_typechecked_expr(c)?;
+                }
+                if let Some(s) = step {
+                    self.check_typechecked_stmt(s)?;
+                }
+                self.check_typechecked_body(body)?;
+            }
+            Statement::ForRange { var_name, start, end, body, span, .. } => {
+                self.check_typechecked_expr(start)?;
+                self.check_typechecked_expr(end)?;
+                self.enter_scope();
+                if let Some(v) = var_name {
+                    let _ = self.declare_variable(v, Type::Int, false, *span);
+                }
+                for s in &body.statements {
+                    self.check_typechecked_stmt(s)?;
+                }
+                self.exit_scope();
+            }
+            Statement::ForEach { item_var, key_var, collection, body, span, .. } => {
+                self.check_typechecked_expr(collection)?;
+                self.enter_scope();
+                let _ = self.declare_variable(item_var, Type::Everything, false, *span);
+                if let Some(k) = key_var {
+                    let _ = self.declare_variable(k, Type::Everything, false, *span);
+                }
+                for s in &body.statements {
+                    self.check_typechecked_stmt(s)?;
+                }
+                self.exit_scope();
+            }
+            Statement::Return { value, .. } => {
+                if let Some(v) = value {
+                    self.check_typechecked_expr(v)?;
+                }
+            }
+            Statement::TryCatch { try_block, err_var, catch_block, span, .. } => {
+                self.check_typechecked_body(try_block)?;
+                self.enter_scope();
+                let _ = self.declare_variable(err_var, Type::String, false, *span);
+                for s in &catch_block.statements {
+                    self.check_typechecked_stmt(s)?;
+                }
+                self.exit_scope();
+            }
+            Statement::Verify { condition, message, .. } => {
+                self.check_typechecked_expr(condition)?;
+                if let Some(m) = message {
+                    self.check_typechecked_expr(m)?;
+                }
+            }
+            Statement::System { body, .. } => {
+                self.check_typechecked_body(body)?;
+            }
+            Statement::Block(b) => {
+                self.check_typechecked_body(b)?;
+            }
+            Statement::Expr(e) => {
+                self.check_typechecked_expr(e)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn check_typechecked_expr(&self, expr: &Expr) -> Result<(), AlphaError> {
+        match expr {
+            Expr::Literal(LiteralValue::Nothing, span) => {
+                Err(AlphaError::type_error(
+                    "[Strict Mode] 'nothing' literal is forbidden in #typechecked function",
+                    *span,
+                ).with_hint("Strict mode disallows 'nothing' and 'something'"))
+            }
+            Expr::ForceUnwrap { span, .. } => {
+                Err(AlphaError::type_error(
+                    "[Strict Mode] Force unwrap operators ('!' / '!?') are forbidden in #typechecked function",
+                    *span,
+                ).with_hint("Handle box/union types safely using 'check' pattern matching"))
+            }
+            Expr::Binary { left, right, .. } => {
+                self.check_typechecked_expr(left)?;
+                self.check_typechecked_expr(right)?;
+                Ok(())
+            }
+            Expr::Unary { expr, .. } => {
+                self.check_typechecked_expr(expr)
+            }
+            Expr::Call { callee, args, .. } => {
+                self.check_typechecked_expr(callee)?;
+                for a in args {
+                    self.check_typechecked_expr(a)?;
+                }
+                Ok(())
+            }
+            Expr::MethodCall { object, args, .. } => {
+                self.check_typechecked_expr(object)?;
+                for a in args {
+                    self.check_typechecked_expr(a)?;
+                }
+                Ok(())
+            }
+            Expr::MemberAccess { object, .. } => {
+                self.check_typechecked_expr(object)
+            }
+            Expr::Index { object, index, .. } => {
+                self.check_typechecked_expr(object)?;
+                self.check_typechecked_expr(index)?;
+                Ok(())
+            }
+            Expr::Slice { object, start, end, .. } => {
+                self.check_typechecked_expr(object)?;
+                if let Some(s) = start { self.check_typechecked_expr(s)?; }
+                if let Some(e) = end { self.check_typechecked_expr(e)?; }
+                Ok(())
+            }
+            Expr::Ternary { condition, then_expr, else_expr, .. } => {
+                self.check_typechecked_expr(condition)?;
+                self.check_typechecked_expr(then_expr)?;
+                self.check_typechecked_expr(else_expr)?;
+                Ok(())
+            }
+            Expr::Tuple(items, _) => {
+                for it in items {
+                    self.check_typechecked_expr(it)?;
+                }
+                Ok(())
+            }
+            Expr::Block(blk) => {
+                for s in &blk.statements {
+                    if let Statement::Expr(e) = s {
+                        self.check_typechecked_expr(e)?;
+                    }
+                }
+                Ok(())
+            }
+            Expr::Make { fields, .. } => {
+                for (_, f_expr) in fields {
+                    self.check_typechecked_expr(f_expr)?;
+                }
+                Ok(())
+            }
+            Expr::Check { target, arms, .. } => {
+                self.check_typechecked_expr(target)?;
+                for arm in arms {
+                    match &arm.body {
+                        CheckBody::Block(b) => {
+                            for s in &b.statements {
+                                if let Statement::Expr(e) = s {
+                                    self.check_typechecked_expr(e)?;
+                                }
+                            }
+                        }
+                        CheckBody::Expr(e) => self.check_typechecked_expr(e)?,
+                    }
+                }
+                Ok(())
+            }
+            Expr::Cast { expr, target_type, span } => {
+                if self.contains_forbidden_strict_type(target_type) {
+                    return Err(AlphaError::type_error(
+                        format!("[Strict Mode] Cannot cast to forbidden type '{}' in #typechecked function", target_type),
+                        *span,
+                    ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
+                }
+                self.check_typechecked_expr(expr)
+            }
+            _ => Ok(()),
+        }
     }
 
 
