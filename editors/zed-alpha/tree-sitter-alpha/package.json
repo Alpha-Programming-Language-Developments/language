@@ -1,0 +1,21 @@
+{
+  "name": "tree-sitter-alpha",
+  "version": "0.1.0",
+  "description": "Tree-sitter parser for the Alpha programming language",
+  "main": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "alpha",
+    "parser"
+  ],
+  "author": "Alpha Team",
+  "license": "MIT",
+  "tree-sitter": [
+    {
+      "scope": "source.alpha",
+      "file-types": [
+        "alpha"
+      ]
+    }
+  ]
+}

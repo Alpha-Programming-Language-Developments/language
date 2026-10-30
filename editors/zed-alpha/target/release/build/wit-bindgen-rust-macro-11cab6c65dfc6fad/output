@@ -1,2 +1,0 @@
-cargo:rerun-if-changed=build.rs
-cargo:rustc-env=DEBUG_OUTPUT_DIR=D:\RustProjects\alpha-lang\editors\zed-alpha\target\release\build\wit-bindgen-rust-macro-11cab6c65dfc6fad\out
