@@ -139,6 +139,13 @@ const var MAX_LIVES: int = 3
 - **Explicit Cast**: `(expression -> target_type)`
 - **String Interpolation**: `"Welcome, \{username}! Your score is \{score}."`
 - **Multiline Strings**: `""" ... """`
+- **String Methods**: `.len()`, `.empty?()`, `.chars()` (returns `vect<char>` for iteration)
+- **Character Iteration**:
+```alpha
+for each char in content.chars() {
+    System.out(char)
+}
+```
 
 ---
 

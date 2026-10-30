@@ -149,6 +149,25 @@ pub extern "C" fn alpha_rt_cli_arguments() -> *mut AlphaVect {
     v
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn alpha_rt_str_chars(s: *const c_char) -> *mut AlphaVect {
+    let v = alpha_rt_vect_new();
+    if !s.is_null() {
+        unsafe {
+            if let Ok(str_slice) = CStr::from_ptr(s).to_str() {
+                for c in str_slice.chars() {
+                    let mut buf = [0u8; 4];
+                    let c_str = c.encode_utf8(&mut buf);
+                    if let Ok(c_string) = CString::new(&*c_str) {
+                        alpha_rt_vect_push(v, c_string.into_raw() as *mut c_void);
+                    }
+                }
+            }
+        }
+    }
+    v
+}
+
 // =========================================================================
 // Core / Io (Filesystem)
 // =========================================================================

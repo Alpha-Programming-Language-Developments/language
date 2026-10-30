@@ -1,3 +1,4 @@
+use std::path::Path;
 use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
@@ -88,6 +89,65 @@ impl Default for WebviewWindowConfig {
     }
 }
 
+pub fn resolve_webview_url(url: &str, working_dir: &Path) -> Result<String, String> {
+    if url.starts_with("http://")
+        || url.starts_with("https://")
+        || url.starts_with("file://")
+        || url.starts_with("data:")
+        || url.starts_with("ws://")
+        || url.starts_with("wss://")
+    {
+        return Ok(url.to_string());
+    }
+
+    let mut candidates = Vec::new();
+    let p = Path::new(url);
+    if p.is_absolute() {
+        candidates.push(p.to_path_buf());
+    }
+
+    candidates.push(working_dir.join(url));
+
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join(url));
+        if let Some(parent) = cwd.parent() {
+            candidates.push(parent.join(url));
+        }
+    }
+
+    if let Some(parent) = working_dir.parent() {
+        candidates.push(parent.join(url));
+    }
+
+    if let Some(root) = crate::driver::project::find_project_root(working_dir) {
+        candidates.push(root.join(url));
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(root) = crate::driver::project::find_project_root(&cwd) {
+            candidates.push(root.join(url));
+        }
+    }
+
+    // Common asset subdirectories
+    candidates.push(working_dir.join("ui").join(url));
+    candidates.push(working_dir.join("src").join(url));
+
+    for cand in candidates {
+        if cand.is_file() {
+            let canon = std::fs::canonicalize(&cand).unwrap_or(cand);
+            let path_str = canon.to_string_lossy().replace('\\', "/");
+            let clean = path_str.trim_start_matches("//?/");
+            return Ok(format!("file:///{}", clean));
+        }
+    }
+
+    Err(format!(
+        "File '{}' not found. Searched in {:?} and project root.",
+        url, working_dir
+    ))
+}
+
 pub fn run_webview_loop(interp: &mut Interpreter, span: Span) -> Result<Value, AlphaError> {
     let cfg = interp.webview_config.clone();
     let mut event_loop = EventLoopBuilder::<String>::with_user_event().build();
@@ -109,14 +169,24 @@ pub fn run_webview_loop(interp: &mut Interpreter, span: Span) -> Result<Value, A
     if let Some(html) = &cfg.html {
         builder = builder.with_html(html);
     } else if let Some(url) = &cfg.url {
-        builder = builder.with_url(url);
+        let resolved = resolve_webview_url(url, interp.working_dir())
+            .map_err(|e| AlphaError::runtime(format!("Failed to build WebView: {}", e), span))?;
+        builder = builder.with_url(&resolved);
     } else {
         builder = builder.with_html("<!DOCTYPE html><html><body><h1>WebAlph</h1></body></html>");
     }
 
     let webview = builder
         .build(&window)
-        .map_err(|e| AlphaError::runtime(format!("Failed to build WebView: {}", e), span))?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            let hint = if msg.contains("0x80070057") || msg.contains("Параметр задан неверно") {
+                " (WebView2 invalid parameter - ensure URL or HTML file path is valid and accessible)"
+            } else {
+                ""
+            };
+            AlphaError::runtime(format!("Failed to build WebView: {}{}", msg, hint), span)
+        })?;
 
     let on_msg_cb = interp.webview_on_message.clone();
     let pending_evals_rc = interp.webview_pending_evals.clone();

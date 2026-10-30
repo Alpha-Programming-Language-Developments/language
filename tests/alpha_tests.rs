@@ -2050,3 +2050,273 @@ function main() [public, int] {
     let res = interp.eval_source(source, None).expect("Execution should succeed");
     assert_eq!(res, Value::Int(150));
 }
+
+#[test]
+fn test_string_chars_iteration() {
+    let source = r#"
+function main() [public, int] {
+    var content: string = "Alpha"
+    var char_count: int = 0
+    var collected: string = ""
+
+    for each c in content.chars() {
+        char_count = char_count + 1
+        collected = collected + c
+    }
+
+    var direct_count: int = 0
+    for each ch in content {
+        direct_count = direct_count + 1
+    }
+
+    if char_count == 5 && collected == "Alpha" && direct_count == 5 {
+        return 1
+    }
+    return 0
+}
+"#;
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution should succeed");
+    assert_eq!(res, Value::Int(1));
+}
+
+#[test]
+fn test_string_indexing_and_chars_indexing() {
+    let source = r#"
+function main() [public, int] {
+    var content: string = "Hello"
+    var c1: char = content.chars()[1]
+    var c2: char = content.chars()[2]
+    var c3: char = content[1]
+    var c4: char = content[5]
+
+    if c1 == 'H' && c2 == 'e' && c3 == 'H' && c4 == 'o' {
+        return 100
+    }
+    return 0
+}
+"#;
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(source, None).expect("Execution should succeed");
+    assert_eq!(res, Value::Int(100));
+}
+
+
+#[test]
+fn test_alpha_lsp_smart_member_completions() {
+    use alpha_lang::lsp::LspServer;
+    use serde_json::json;
+
+    let mut server = LspServer::new();
+    let uri = "file:///main.alpha";
+    let doc = r#"@strict
+import Core/Io.alpha
+import Core/Basic.alpha
+import Core/Cli.alpha
+
+function main() [here, nothing] #typechecked {
+    var args: vect<string> = cli.arguments()
+    var file: Io.File = Io.open(args[1])
+    var content: string = file.content()
+    content.
+}
+"#;
+    server.add_document(uri, doc);
+
+    // 1. Completion after "content."
+    let comp_content_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 9, "character": 12 }
+        }
+    });
+    let comps = server.get_completions(&comp_content_req);
+    assert!(comps.iter().any(|c| c["label"].as_str() == Some("chars()")), "chars() should be suggested on content.");
+    assert!(comps.iter().any(|c| c["label"].as_str() == Some("split(sep)")), "split() should be suggested on content.");
+    assert!(comps.iter().any(|c| c["label"].as_str() == Some("len()")), "len() should be suggested on content.");
+    assert!(comps.iter().any(|c| c["label"].as_str() == Some("trim()")), "trim() should be suggested on content.");
+
+    // 2. Completion after "file."
+    let doc2 = r#"@strict
+import Core/Io.alpha
+
+function main() [here, nothing] #typechecked {
+    var file: Io.File = Io.open("test.txt")
+    file.
+}
+"#;
+    server.add_document(uri, doc2);
+    let comp_file_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 9 }
+        }
+    });
+    let file_comps = server.get_completions(&comp_file_req);
+    assert!(file_comps.iter().any(|c| c["label"].as_str() == Some("content()")), "content() should be suggested on file.");
+    assert!(file_comps.iter().any(|c| c["label"].as_str() == Some("write(text)")), "write() should be suggested on file.");
+    assert!(file_comps.iter().any(|c| c["label"].as_str() == Some("reset()")), "reset() should be suggested on file.");
+
+    // 3. Chained completion after "file.content()."
+    let doc3 = r#"@strict
+import Core/Io.alpha
+
+function main() [here, nothing] #typechecked {
+    var file: Io.File = Io.open("test.txt")
+    file.content().
+}
+"#;
+    server.add_document(uri, doc3);
+    let comp_chained_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 19 }
+        }
+    });
+    let chained_comps = server.get_completions(&comp_chained_req);
+    assert!(chained_comps.iter().any(|c| c["label"].as_str() == Some("chars()")), "chars() should be suggested on file.content().");
+
+    // 4. General completion suggests local variable "content"
+    let doc4 = r#"@strict
+import Core/Io.alpha
+
+function main() [here, nothing] #typechecked {
+    var content: string = "hello"
+    c
+}
+"#;
+    server.add_document(uri, doc4);
+    let comp_scope_req = json!({
+        "params": {
+            "textDocument": { "uri": uri },
+            "position": { "line": 5, "character": 5 }
+        }
+    });
+    let scope_comps = server.get_completions(&comp_scope_req);
+    assert!(scope_comps.iter().any(|c| c["label"].as_str() == Some("content")), "content local variable should be in general completions");
+}
+
+#[test]
+fn test_alpha_pkg_manager() {
+    use std::fs;
+    let temp_dir = std::env::temp_dir().join("alpha_pkg_test_project_unit");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).unwrap();
+
+    let toml_path = temp_dir.join("alpha-project.toml");
+    fs::write(&toml_path, "[project]\nname = \"my_test_app\"\nversion = \"0.1.0\"\n").unwrap();
+
+    let args = vec!["add".to_string(), "https://github.com/Alpha-Programming-Language-Developments/webalph".to_string()];
+    let res = alpha_lang::driver::pkg::handle_pkg_command(&args, &temp_dir);
+    assert!(res.is_ok());
+
+    let alpaks_path = temp_dir.join("packages.alpaks");
+    assert!(alpaks_path.exists());
+    let alpaks_content = fs::read_to_string(&alpaks_path).unwrap();
+    assert!(alpaks_content.contains("\"webalph\" = import"));
+    assert!(alpaks_content.contains("https://github.com/Alpha-Programming-Language-Developments/webalph/blob/main/src/lib.alpha"));
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+
+#[test]
+fn test_alpha_test_runner_and_hash_test_directive() {
+    use std::fs;
+    let temp_dir = std::env::temp_dir().join("alpha_test_runner_unit");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(temp_dir.join("src").join("tests")).unwrap();
+
+    let toml_path = temp_dir.join("alpha-project.toml");
+    fs::write(&toml_path, "[project]\nname = \"test_runner_app\"\nversion = \"0.1.0\"\n").unwrap();
+
+    // 1. Create test file src/tests/math_test.alpha
+    let math_test_src = r#"import Core/Basic.alpha
+
+#test add() {
+    var a: int = 2 + 3
+    verify a == 5, "2 + 3 should be 5"
+}
+
+#test sub() {
+    var b: int = 10 - 4
+    assert b == 6, "10 - 4 should be 6"
+}
+"#;
+    fs::write(temp_dir.join("src").join("tests").join("math_test.alpha"), math_test_src).unwrap();
+
+    // 2. Create another test file src/tests/str_test.alpha
+    let str_test_src = r#"import Core/Basic.alpha
+
+#test check_string() {
+    var s: string = "alpha"
+    verify s.len() == 5, "s.len() must be 5"
+    verify s.chars()[1] == 'a', "first char must be a"
+}
+"#;
+    fs::write(temp_dir.join("src").join("tests").join("str_test.alpha"), str_test_src).unwrap();
+
+    // Run all tests
+    let res_all = alpha_lang::driver::test::run_tests(&temp_dir, None);
+    assert!(res_all.is_ok(), "Running all tests should succeed");
+
+    // Run filtered test by name "add"
+    let res_single = alpha_lang::driver::test::run_tests(&temp_dir, Some("add"));
+    assert!(res_single.is_ok(), "Running single test 'add' should succeed");
+
+    // Run filtered test by name "check_string"
+    let res_str = alpha_lang::driver::test::run_tests(&temp_dir, Some("check_string"));
+    assert!(res_str.is_ok(), "Running single test 'check_string' should succeed");
+
+    // 3. Add a failing test
+    let fail_test_src = r#"
+#test failed_assertion() {
+    verify 1 == 2, "Math is broken"
+}
+"#;
+    fs::write(temp_dir.join("src").join("tests").join("fail_test.alpha"), fail_test_src).unwrap();
+
+    let res_fail = alpha_lang::driver::test::run_tests(&temp_dir, Some("failed_assertion"));
+    assert!(res_fail.is_err(), "Failing test should return an error");
+
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+
+#[test]
+fn test_io_file_getline() {
+    use std::fs;
+    let temp_file = std::env::temp_dir().join("alpha_getline_test.txt");
+    fs::write(&temp_file, "First line\nSecond line\nThird line\n").unwrap();
+    let temp_path_escaped = temp_file.to_string_lossy().replace('\\', "/");
+
+    let source = format!(r#"@strict
+import Core/Io.alpha
+import Core/Basic.alpha
+
+function main() [public, int] #typechecked {{
+    var file: Io.File = Io.open("{}")
+    var line1: string = file.getline(1)
+    var line2: string = file.getline(2)
+    var line3: string = file.getline(3)
+
+    if line1 != "First line" {{ return 1 }}
+    if line2 != "Second line" {{ return 2 }}
+    if line3 != "Third line" {{ return 3 }}
+
+    var line4 = file.getline(4)
+    if !line4.nothing?() {{ return 4 }}
+
+    var line0 = file.getline(0)
+    if !line0.nothing?() {{ return 5 }}
+
+    return 100
+}}
+"#, temp_path_escaped);
+
+    let mut interp = Interpreter::new();
+    let res = interp.eval_source(&source, None).expect("Execution should succeed");
+    assert_eq!(res, Value::Int(100));
+
+    let _ = fs::remove_file(&temp_file);
+}

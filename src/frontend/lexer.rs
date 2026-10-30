@@ -282,13 +282,17 @@ impl<'a> Lexer<'a> {
                         let end_pos = self.current_byte_pos();
                         let span = Span::new(start_line, start_col, start_pos, end_pos);
                         return Ok(Token::new(TokenKind::HashTypechecked, span, "#typechecked"));
+                    } else if dir == "test" {
+                        let end_pos = self.current_byte_pos();
+                        let span = Span::new(start_line, start_col, start_pos, end_pos);
+                        return Ok(Token::new(TokenKind::HashTest, span, "#test"));
                     } else {
                         let span = Span::new(start_line, start_col, start_pos, self.current_byte_pos());
-                        return Err(AlphaError::lex(format!("Unknown directive '#{}'. Did you mean '#typechecked'?", dir), span));
+                        return Err(AlphaError::lex(format!("Unknown directive '#{}'. Did you mean '#typechecked' or '#test'?", dir), span));
                     }
                 } else {
                     let span = Span::new(start_line, start_col, start_pos, self.current_byte_pos());
-                    return Err(AlphaError::lex("Unexpected character '#'. Hex colors must be written as '#(HEX)' e.g. '#(FFF00)', or directive '#typechecked'", span));
+                    return Err(AlphaError::lex("Unexpected character '#'. Hex colors must be written as '#(HEX)' e.g. '#(FFF00)', or directive '#typechecked' / '#test'", span));
                 }
             }
 
@@ -509,6 +513,7 @@ impl<'a> Lexer<'a> {
                 Some('r') => '\r',
                 Some('\\') => '\\',
                 Some('\'') => '\'',
+                Some('"') => '"',
                 Some('0') => '\0',
                 Some(other) => {
                     let span = Span::new(self.line, self.col, start_pos, self.current_byte_pos());
@@ -642,6 +647,7 @@ impl<'a> Lexer<'a> {
             "make" => TokenKind::Make,
             "schedule" => TokenKind::Schedule,
             "verify" => TokenKind::Verify,
+            "assert" => TokenKind::Verify,
             "system" => TokenKind::System,
             "enum" => TokenKind::Enum,
             "module" => TokenKind::Module,

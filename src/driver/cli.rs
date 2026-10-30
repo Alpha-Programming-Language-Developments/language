@@ -124,7 +124,11 @@ pub fn run_cli() -> Result<(), AlphaError> {
             })?;
 
             let (target_path, script_args) = if let Some(target) = args.get(2) {
-                if target.ends_with(".alpha") || Path::new(target).exists() {
+                if target.ends_with(".alpha") {
+                    (PathBuf::from(target), args[3..].to_vec())
+                } else if let Some(root) = find_project_root(&cur_dir) {
+                    (root.join("src").join("main.alpha"), args[2..].to_vec())
+                } else if Path::new(target).exists() {
                     (PathBuf::from(target), args[3..].to_vec())
                 } else {
                     let root = find_project_root(&cur_dir).ok_or_else(|| {
@@ -166,6 +170,21 @@ pub fn run_cli() -> Result<(), AlphaError> {
             };
 
             check_file(&target_path)
+        }
+
+        "pkg" => {
+            let cur_dir = env::current_dir().map_err(|e| {
+                AlphaError::runtime(format!("Failed to get current directory: {}", e), Default::default())
+            })?;
+            crate::driver::pkg::handle_pkg_command(&args[2..], &cur_dir)
+        }
+
+        "test" => {
+            let cur_dir = env::current_dir().map_err(|e| {
+                AlphaError::runtime(format!("Failed to get current directory: {}", e), Default::default())
+            })?;
+            let filter = args.get(2).map(|s| s.as_str());
+            crate::driver::test::run_tests(&cur_dir, filter)
         }
 
         "-v" | "--version" | "version" => {
@@ -235,7 +254,14 @@ fn run_file(path: &Path, cli_args: &[String]) -> Result<(), AlphaError> {
 
 fn run_bundle(bundle: crate::driver::project::AlphaProjectBundle, cli_args: &[String]) -> Result<(), AlphaError> {
     let mut interp = Interpreter::new().with_cli_args(cli_args.to_vec());
-    let cur_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut cur_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if let Ok(exe) = env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            if let Some(root) = find_project_root(parent) {
+                cur_dir = root;
+            }
+        }
+    }
     interp = interp.with_working_dir(cur_dir);
 
     for (rel_path, content) in &bundle.files {
@@ -327,6 +353,8 @@ USAGE:
 
 COMMANDS:
     here [name]     Initialize a new Alpha project in the current directory
+    pkg [url]       Manage packages (e.g. 'alpha pkg <github_url>')
+    test [name]     Discover and run '#test' functions in src/tests/
     build [file]    Compile into a native binary via direct LLVM Backend (-O3)
     run [file]      Compile and execute with native hardware speed
     check [file]    Verify syntax and perform static type checking without running

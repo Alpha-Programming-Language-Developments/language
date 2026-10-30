@@ -103,6 +103,7 @@ impl LlvmCodegen {
         header.push_str("declare i64 @alpha_rt_vect_len(ptr)\n");
         header.push_str("declare ptr @alpha_rt_vect_get(ptr, i64)\n");
         header.push_str("declare void @alpha_rt_vect_free(ptr)\n");
+        header.push_str("declare ptr @alpha_rt_str_chars(ptr)\n");
         header.push_str("declare ptr @alpha_rt_format_str(ptr, ptr)\n\n");
 
         // Format strings
@@ -791,6 +792,11 @@ impl LlvmCodegen {
                         let res_reg = self.new_reg();
                         code.push_str(&format!("  {} = call i64 @alpha_rt_vect_len(ptr {})\n", res_reg, obj_reg));
                         Ok((code, res_reg, "i64".to_string()))
+                    }
+                    "chars" => {
+                        let res_reg = self.new_reg();
+                        code.push_str(&format!("  {} = call ptr @alpha_rt_str_chars(ptr {})\n", res_reg, obj_reg));
+                        Ok((code, res_reg, "ptr".to_string()))
                     }
                     "exists?" | "exists" => {
                         if let Some(arg) = args.first() {

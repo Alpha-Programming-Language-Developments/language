@@ -4,7 +4,8 @@ use std::io::{self, BufRead, Read, Write};
 use std::path::Path;
 use serde_json::{json, Value};
 use crate::diagnostics::error::{AlphaError, Span};
-use crate::frontend::ast::{AttachedMethod, FunctionDecl, ImportTarget, Program, Statement};
+use crate::frontend::ast::{AttachedMethod, Expr, FunctionDecl, ImportTarget, LiteralValue, Program, Statement};
+use crate::semantics::types::Type;
 use crate::frontend::lexer::Lexer;
 use crate::frontend::parser::Parser;
 use crate::semantics::typechecker::TypeChecker;
@@ -541,13 +542,11 @@ impl LspServer {
             }
         }
 
-        // Check variables
-        for stmt in &program.statements {
-            if let Statement::Var(v) = stmt {
-                if v.name == word {
-                    let (range, _) = span_to_lsp_range(&v.span, &v.name);
-                    return json!({ "uri": uri, "range": range });
-                }
+        // Check variables across all scopes (functions, parameters, blocks, top-level)
+        for (v_name, _, v_span) in collect_all_variables(&program) {
+            if v_name == word {
+                let (range, _) = span_to_lsp_range(&v_span, &v_name);
+                return json!({ "uri": uri, "range": range });
             }
         }
 
@@ -624,6 +623,25 @@ impl LspServer {
             ("Math.min", ("Math.min(a: int, b: int) -> int", "Minimum of two integers", vec!["a: int", "b: int"])),
             ("Math.max", ("Math.max(a: int, b: int) -> int", "Maximum of two integers", vec!["a: int", "b: int"])),
             ("Math.pow", ("Math.pow(base: int, exp: int) -> int", "Computes base raised to the power of exp", vec!["base: int", "exp: int"])),
+            ("content", ("file.content() -> string", "Reads the entire file content as string", vec![])),
+            ("file.getline", ("file.getline(line_number: int) -> string", "Reads a specific line from file by 1-based index", vec!["line_number: int"])),
+            ("getline", ("file.getline(line_number: int) -> string", "Reads a specific line from file by 1-based index", vec!["line_number: int"])),
+            ("chars", ("str.chars() -> vect<char>", "Returns a vector of characters in the string", vec![])),
+            ("split", ("str.split(sep: string) -> vect<string>", "Splits string by separator into a vector of strings", vec!["sep: string"])),
+            ("trim", ("str.trim() -> string", "Trims leading and trailing whitespace", vec![])),
+            ("trim_start", ("str.trim_start() -> string", "Trims leading whitespace", vec![])),
+            ("trim_end", ("str.trim_end() -> string", "Trims trailing whitespace", vec![])),
+            ("replace", ("str.replace(from: string, to: string) -> string", "Replaces occurrences of from with to", vec!["from: string", "to: string"])),
+            ("contains", ("str.contains(sub: string) -> boolean", "Checks if string contains substring", vec!["sub: string"])),
+            ("starts_with?", ("str.starts_with?(prefix: string) -> boolean", "Checks if string starts with prefix", vec!["prefix: string"])),
+            ("ends_with?", ("str.ends_with?(suffix: string) -> boolean", "Checks if string ends with suffix", vec!["suffix: string"])),
+            ("to_lower", ("str.to_lower() -> string", "Converts string to lowercase", vec![])),
+            ("to_upper", ("str.to_upper() -> string", "Converts string to uppercase", vec![])),
+            ("to_int", ("str.to_int() -> int", "Parses string into integer", vec![])),
+            ("to_float", ("str.to_float() -> float", "Parses string into float", vec![])),
+            ("cli.arguments", ("cli.arguments() -> vect<string>", "Returns list of command-line arguments", vec![])),
+            ("arguments", ("cli.arguments() -> vect<string>", "Returns list of command-line arguments", vec![])),
+            ("cli.paint", ("cli.paint(text: string, color: hexcolor) -> string", "Applies ANSI hex color to string", vec!["text: string", "color: hexcolor"])),
         ]);
 
         if let Some((label, doc, params)) = stdlib_sigs.get(callee) {
@@ -809,7 +827,16 @@ impl LspServer {
         }
 
         // 2. Parse current program and imported files dynamically
-        let current_program = parse_program_safely(&full_text);
+        let current_program = parse_program_safely(&full_text).or_else(|| {
+            let lines: Vec<&str> = full_text.lines().collect();
+            if target_line < lines.len() {
+                let mut sanitized: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+                sanitized[target_line] = format!("// {}", sanitized[target_line]);
+                parse_program_safely(&sanitized.join("\n"))
+            } else {
+                None
+            }
+        });
         let imported_programs = if let Some(ref prog) = current_program {
             self.get_imported_programs(uri, prog)
         } else {
@@ -818,7 +845,7 @@ impl LspServer {
 
         // 3. Member Access after '.'
         if let Some(prefix) = extract_prefix_before_dot(&line_prefix) {
-            let members = get_member_completions(&prefix, current_program.as_ref(), &imported_programs);
+            let members = get_member_completions(&prefix, current_program.as_ref(), &imported_programs, &full_text);
             if !members.is_empty() {
                 return members;
             }
@@ -876,14 +903,12 @@ impl LspServer {
                     }));
                 }
             }
-            for stmt in &program.statements {
-                if let Statement::Var(v) = stmt {
-                    push_item(json!({
-                        "label": v.name,
-                        "kind": 6, // Variable
-                        "detail": format!("var {}: {}", v.name, v.ty)
-                    }));
-                }
+            for (v_name, v_ty, _) in collect_all_variables(program) {
+                push_item(json!({
+                    "label": v_name,
+                    "kind": 6, // Variable
+                    "detail": format!("var {}: {}", v_name, v_ty)
+                }));
             }
         }
 
@@ -920,14 +945,41 @@ impl LspServer {
                     "detail": format!("enum {}", en.name)
                 }));
             }
+            for (v_name, v_ty, _) in collect_all_variables(imported_prog) {
+                push_item(json!({
+                    "label": v_name,
+                    "kind": 6,
+                    "detail": format!("var {}: {}", v_name, v_ty)
+                }));
+            }
         }
 
         // C. Standard Core Library Functions
-        for name in &["print", "printf", "format", "error"] {
+        for (name, detail) in &[
+            ("print", "function print(value: something) -> nothing"),
+            ("printf", "function printf(fmt: string, ...args) -> nothing"),
+            ("format", "function format(fmt: string, ...args) -> string"),
+            ("error", "function error(message: string) -> nothing"),
+            ("paint", "function paint(text: string, color: hexcolor) -> string"),
+            ("Time.now", "function Time.now() -> int"),
+            ("Time.sleep", "function Time.sleep(ms: int) -> nothing"),
+            ("Time.benchmark", "function Time.benchmark(block) -> int"),
+            ("Io.open", "function Io.open(path: string) -> Io.File"),
+            ("Io.read", "function Io.read(path: string) -> string"),
+            ("Io.write", "function Io.write(path: string, content: string) -> nothing"),
+            ("Fs.open", "function Fs.open(path: string) -> Fs.Dir"),
+            ("Fs.exists?", "function Fs.exists?(path: string) -> boolean"),
+            ("cli.arguments", "function cli.arguments() -> vect<string>"),
+            ("cli.paint", "function cli.paint(text: string, color: hexcolor) -> string"),
+            ("Math.abs", "function Math.abs(n: int) -> int"),
+            ("Math.min", "function Math.min(a: int, b: int) -> int"),
+            ("Math.max", "function Math.max(a: int, b: int) -> int"),
+            ("Mem.arena.allocate", "function Mem.arena.allocate([capacity: int]) -> Mem.ArenaSector"),
+        ] {
             push_item(json!({
                 "label": *name,
                 "kind": 3, // Function
-                "detail": "function"
+                "detail": *detail
             }));
         }
 
@@ -960,6 +1012,7 @@ impl LspServer {
             ("verify", "verify ${1:condition}, \"${2:error message}\""),
             ("@strict", "@strict\n"),
             ("#typechecked", "#typechecked "),
+            ("#test", "#test ${1:test_name}() {\n\t$0\n}"),
         ];
         for (lbl, snip) in snippets {
             push_item(json!({
@@ -1063,6 +1116,7 @@ impl LspServer {
             "hexcolor" => "hexcolor (`#(RRGGBB)`)",
             "@strict" => "@strict",
             "#typechecked" | "typechecked" => "directive #typechecked (marks function as pre-checked, enforces strict mode rules, accelerates compilation)",
+            "#test" => "directive #test (marks function as an automated test for 'alpha test')",
             "make schedule" | "schedule" => "make schedule { ... }",
             "check" => "check pattern matching",
             "Time" | "time" => "module Time",
@@ -1083,6 +1137,24 @@ impl LspServer {
             "printf" => "function printf(fmt: string, ...args) -> nothing",
             "format" => "function format(fmt: string, ...args) -> string",
             "error" => "function error(message: string) -> nothing",
+            "chars" => "method chars() -> vect<char>\n\nReturns a vector of individual characters in the string.",
+            "split" => "method split(sep: string) -> vect<string>\n\nSplits string by separator into a vector of substrings.",
+            "trim" => "method trim() -> string\n\nTrims leading and trailing whitespace characters.",
+            "trim_start" => "method trim_start() -> string\n\nTrims leading whitespace characters.",
+            "trim_end" => "method trim_end() -> string\n\nTrims trailing whitespace characters.",
+            "replace" => "method replace(from: string, to: string) -> string\n\nReplaces all occurrences of from with to.",
+            "starts_with?" | "starts_with" => "method starts_with?(prefix: string) -> boolean\n\nReturns true if string starts with prefix.",
+            "ends_with?" | "ends_with" => "method ends_with?(suffix: string) -> boolean\n\nReturns true if string ends with suffix.",
+            "to_lower" => "method to_lower() -> string\n\nConverts string to lowercase.",
+            "to_upper" => "method to_upper() -> string\n\nConverts string to uppercase.",
+            "to_int" => "method to_int() -> int\n\nParses string into a signed 64-bit integer.",
+            "to_float" => "method to_float() -> float\n\nParses string into a 64-bit float.",
+            "content" => "method content() -> string\n\nReads the entire file content into a string.",
+            "getline" => "method getline(line_number: int) -> string\n\nReads a single line from the file using 1-based indexing (returns nothing if out of bounds).",
+            "arguments" => "function cli.arguments() -> vect<string>\n\nReturns command-line arguments passed to the program.",
+            "push" => "method push(item) -> nothing\n\nAppends an element to the vector.",
+            "pop" => "method pop() -> element\n\nRemoves and returns the last element of the vector.",
+            "insert" => "method insert(...) -> nothing\n\nInserts into map or arena sector.",
             _ => return json!(null),
         };
 
@@ -1217,21 +1289,50 @@ fn extract_prefix_before_dot(line_prefix: &str) -> Option<String> {
     if !line_prefix.ends_with('.') {
         return None;
     }
-    let trimmed = &line_prefix[..line_prefix.len() - 1];
+    let trimmed = line_prefix[..line_prefix.len() - 1].trim_end();
+    if trimmed.is_empty() {
+        return None;
+    }
     let chars: Vec<char> = trimmed.chars().collect();
-    let mut start = chars.len();
-    while start > 0 {
-        let c = chars[start - 1];
-        if c.is_alphanumeric() || c == '_' || c == '?' || c == '@' {
-            start -= 1;
+    let mut i = chars.len();
+    let mut paren_depth = 0;
+    let mut bracket_depth = 0;
+
+    while i > 0 {
+        let c = chars[i - 1];
+        if c == ')' {
+            paren_depth += 1;
+            i -= 1;
+        } else if c == '(' {
+            if paren_depth > 0 {
+                paren_depth -= 1;
+                i -= 1;
+            } else {
+                break;
+            }
+        } else if c == ']' {
+            bracket_depth += 1;
+            i -= 1;
+        } else if c == '[' {
+            if bracket_depth > 0 {
+                bracket_depth -= 1;
+                i -= 1;
+            } else {
+                break;
+            }
+        } else if paren_depth > 0 || bracket_depth > 0 {
+            i -= 1;
+        } else if c.is_alphanumeric() || c == '_' || c == '?' || c == '@' || c == '.' {
+            i -= 1;
         } else {
             break;
         }
     }
-    if start == chars.len() {
+
+    if i == chars.len() {
         None
     } else {
-        Some(chars[start..].iter().collect())
+        Some(chars[i..].iter().collect())
     }
 }
 
@@ -1281,47 +1382,1335 @@ fn method_to_completion(method: &AttachedMethod, struct_name: &str) -> Value {
     })
 }
 
-fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported: &[Program]) -> Vec<Value> {
-    let lower = prefix.to_lowercase();
-    let builtin_methods: &[(&str, &[&str])] = &[
-        ("time", &["now", "now_ms", "sleep", "elapsed", "benchmark"]),
-        ("io", &["open", "read", "write", "exists?", "delete", "copy", "move"]),
-        ("fs", &["open", "exists?", "file?", "dir?", "join", "extension", "filename", "stem", "parent", "abs"]),
-        ("dir", &["open", "create", "delete", "files", "dirs", "walk", "get_children"]),
-        ("file", &["read", "write", "close", "size", "lines"]),
-        ("math", &["abs", "min", "max", "clamp", "pow", "sqr"]),
-        ("cli", &["arguments", "paint"]),
-        ("env", &["current", "home", "get", "set"]),
-        ("console", &["out"]),
-        ("machine", &["out"]),
-        ("random", &["int", "float", "boolean", "choice"]),
-        ("http", &["get", "post", "download"]),
-        ("json", &["parse", "stringify"]),
-        ("webview", &["open", "on_message", "eval", "run"]),
-        ("mem", &["arena", "allocate"]),
-        ("mem.arena", &["allocate"]),
-        ("mem.arenasector", &["insert", "reset", "count", "allocated"]),
-        ("arenasector", &["insert", "reset", "count", "allocated"]),
-        ("sector", &["insert", "reset", "count", "allocated"]),
-    ];
+pub fn collect_variables_from_statement(stmt: &Statement, vars: &mut Vec<(String, Type, Span)>) {
+    match stmt {
+        Statement::Var(v) => {
+            vars.push((v.name.clone(), v.ty.clone(), v.span));
+        }
+        Statement::VarTuple { names, types, span, .. } => {
+            for (i, name) in names.iter().enumerate() {
+                let ty = types.get(i).cloned().flatten().unwrap_or(Type::Something);
+                vars.push((name.clone(), ty, *span));
+            }
+        }
+        Statement::If { then_branch, elseif_branches, else_branch, .. } => {
+            for s in &then_branch.statements {
+                collect_variables_from_statement(s, vars);
+            }
+            for (_, elif_block) in elseif_branches {
+                for s in &elif_block.statements {
+                    collect_variables_from_statement(s, vars);
+                }
+            }
+            if let Some(eb) = else_branch {
+                for s in &eb.statements {
+                    collect_variables_from_statement(s, vars);
+                }
+            }
+        }
+        Statement::Check { arms, .. } => {
+            for arm in arms {
+                if let Some(b) = &arm.binding {
+                    vars.push((b.clone(), Type::Something, arm.span));
+                }
+                if let crate::frontend::ast::CheckBody::Block(b) = &arm.body {
+                    for s in &b.statements {
+                        collect_variables_from_statement(s, vars);
+                    }
+                }
+            }
+        }
+        Statement::ForInfinite { body, .. } => {
+            for s in &body.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::ForCount { init, body, .. } => {
+            if let Some(i) = init {
+                collect_variables_from_statement(i, vars);
+            }
+            for s in &body.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::ForRange { var_name, body, span, .. } => {
+            if let Some(name) = var_name {
+                vars.push((name.clone(), Type::Int, *span));
+            }
+            for s in &body.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::ForEach { item_var, key_var, collection, body, span } => {
+            let item_ty = match collection {
+                Expr::MethodCall { method, .. } if method == "chars" => Type::Char,
+                Expr::Literal(LiteralValue::String(_), _) => Type::Char,
+                _ => Type::Something,
+            };
+            vars.push((item_var.clone(), item_ty, *span));
+            if let Some(k) = key_var {
+                vars.push((k.clone(), Type::Int, *span));
+            }
+            for s in &body.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::TryCatch { err_var, try_block, catch_block, span } => {
+            vars.push((err_var.clone(), Type::String, *span));
+            for s in &try_block.statements {
+                collect_variables_from_statement(s, vars);
+            }
+            for s in &catch_block.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::Block(b) => {
+            for s in &b.statements {
+                collect_variables_from_statement(s, vars);
+            }
+        }
+        Statement::Schedule { statement, .. } => {
+            collect_variables_from_statement(statement, vars);
+        }
+        _ => {}
+    }
+}
 
-    if let Some((_, methods)) = builtin_methods.iter().find(|(m, _)| *m == lower) {
-        return methods
-            .iter()
-            .map(|name| {
-                json!({
-                    "label": *name,
-                    "kind": 2, // Method
-                    "detail": "function"
-                })
-            })
-            .collect();
+pub fn collect_all_variables(program: &Program) -> Vec<(String, Type, Span)> {
+    let mut vars = Vec::new();
+    for stmt in &program.statements {
+        collect_variables_from_statement(stmt, &mut vars);
+    }
+    for func in &program.functions {
+        for p in &func.params {
+            vars.push((p.name.clone(), p.ty.clone(), p.span));
+        }
+        for stmt in &func.body.statements {
+            collect_variables_from_statement(stmt, &mut vars);
+        }
+    }
+    for st in &program.structures {
+        for m in &st.methods {
+            for p in &m.params {
+                vars.push((p.name.clone(), p.ty.clone(), p.span));
+            }
+            for stmt in &m.body.statements {
+                collect_variables_from_statement(stmt, &mut vars);
+            }
+        }
+    }
+    for m in &program.modules {
+        for v in &m.variables {
+            vars.push((v.name.clone(), v.ty.clone(), v.span));
+        }
+        for func in &m.functions {
+            for p in &func.params {
+                vars.push((p.name.clone(), p.ty.clone(), p.span));
+            }
+            for stmt in &func.body.statements {
+                collect_variables_from_statement(stmt, &mut vars);
+            }
+        }
+    }
+    vars
+}
+
+
+fn scan_variables_from_text(text: &str) -> Vec<(String, Type)> {
+    let mut vars = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let stripped = if let Some(s) = trimmed.strip_prefix("const var ") {
+            s
+        } else if let Some(s) = trimmed.strip_prefix("var ") {
+            s
+        } else {
+            continue;
+        };
+        if let Some(colon_idx) = stripped.find(':') {
+            let name = stripped[..colon_idx].trim();
+            let rest = &stripped[colon_idx + 1..];
+            let type_str = if let Some(eq_idx) = rest.find('=') {
+                rest[..eq_idx].trim()
+            } else {
+                rest.trim()
+            };
+            let ty = match type_str {
+                "string" | "String" => Type::String,
+                "int" => Type::Int,
+                "unt" => Type::Unt,
+                "float" => Type::Float,
+                "char" => Type::Char,
+                "boolean" | "bool" => Type::Boolean,
+                "Io.File" | "File" => Type::Custom("Io.File".to_string()),
+                "Fs.Dir" | "Dir" => Type::Custom("Fs.Dir".to_string()),
+                s if s.starts_with("vect<") || s == "vect" => Type::Vect(Box::new(Type::Something)),
+                s if s.starts_with("map<") || s == "map" => Type::Map(Box::new(Type::Something), Box::new(Type::Something)),
+                other => Type::Custom(other.to_string()),
+            };
+            if !name.is_empty() {
+                vars.push((name.to_string(), ty));
+            }
+        } else if let Some(eq_idx) = stripped.find('=') {
+            let name = stripped[..eq_idx].trim();
+            let rhs = stripped[eq_idx + 1..].trim();
+            let ty = if rhs.starts_with('"') {
+                Type::String
+            } else if rhs.starts_with('\'') {
+                Type::Char
+            } else if rhs == "true" || rhs == "false" {
+                Type::Boolean
+            } else if rhs.starts_with("Io.open") {
+                Type::Custom("Io.File".to_string())
+            } else if rhs.starts_with("Fs.open") {
+                Type::Custom("Fs.Dir".to_string())
+            } else if rhs.contains(".content()") {
+                Type::String
+            } else if rhs.contains(".chars()") {
+                Type::Vect(Box::new(Type::Char))
+            } else if rhs.starts_with("cli.arguments") || rhs.starts_with("Cli.arguments") {
+                Type::Vect(Box::new(Type::String))
+            } else {
+                Type::Something
+            };
+            if !name.is_empty() {
+                vars.push((name.to_string(), ty));
+            }
+        }
+    }
+    vars
+}
+
+fn resolve_method_return_type(base_ty: &Type, method: &str, all_programs: &[&Program]) -> Option<Type> {
+    match base_ty {
+        Type::String => match method {
+            "chars" => Some(Type::Vect(Box::new(Type::Char))),
+            "split" => Some(Type::Vect(Box::new(Type::String))),
+            "len" | "to_int" => Some(Type::Int),
+            "to_float" => Some(Type::Float),
+            "empty?" | "contains" | "starts_with?" | "starts_with" | "ends_with?" | "ends_with" | "nothing?" => Some(Type::Boolean),
+            "trim" | "trim_start" | "trim_end" | "replace" | "to_lower" | "to_upper" => Some(Type::String),
+            _ => None,
+        },
+        Type::Vect(inner) => match method {
+            "push" => Some(Type::Nothing),
+            "len" => Some(Type::Int),
+            "get" | "pop" => Some(*inner.clone()),
+            "empty?" | "nothing?" => Some(Type::Boolean),
+            _ => None,
+        },
+        Type::Map(_, v) => match method {
+            "insert" => Some(Type::Nothing),
+            "get" => Some(*v.clone()),
+            "contains" | "empty?" | "nothing?" => Some(Type::Boolean),
+            "len" => Some(Type::Int),
+            _ => None,
+        },
+        Type::Custom(custom_name) => {
+            let norm = custom_name.to_lowercase();
+            if norm == "io.file" || norm == "file" {
+                match method {
+                    "content" | "read" | "getline" => Some(Type::String),
+                    "write" | "reset" | "delete" | "close" => Some(Type::Nothing),
+                    "exists?" | "exists" | "empty?" | "something?" | "nothing?" => Some(Type::Boolean),
+                    "size" | "bytelen" | "linelen" | "symlen" => Some(Type::Int),
+                    _ => None,
+                }
+            } else if norm == "fs.dir" || norm == "dir" {
+                match method {
+                    "open" => Some(Type::Custom("Fs.Dir".to_string())),
+                    "create" | "delete" | "rename" | "reset" => Some(Type::Nothing),
+                    "get_children" | "files" | "dirs" | "walk" => Some(Type::Vect(Box::new(Type::String))),
+                    "join" => Some(Type::String),
+                    "exists?" | "exists" | "empty?" | "nothing?" => Some(Type::Boolean),
+                    _ => None,
+                }
+            } else if norm == "io" {
+                match method {
+                    "open" => Some(Type::Custom("Io.File".to_string())),
+                    "read" => Some(Type::String),
+                    "write" | "copy" | "move" | "delete" => Some(Type::Nothing),
+                    "size" => Some(Type::Int),
+                    "exists?" | "file?" => Some(Type::Boolean),
+                    _ => None,
+                }
+            } else if norm == "fs" {
+                match method {
+                    "open" => Some(Type::Custom("Fs.Dir".to_string())),
+                    "exists?" | "file?" | "dir?" => Some(Type::Boolean),
+                    "join" | "extension" | "filename" | "stem" | "parent" | "abs" => Some(Type::String),
+                    _ => None,
+                }
+            } else if norm == "cli" {
+                match method {
+                    "arguments" => Some(Type::Vect(Box::new(Type::String))),
+                    "paint" => Some(Type::String),
+                    _ => None,
+                }
+            } else if norm == "time" {
+                match method {
+                    "now" | "now_ms" | "elapsed" | "benchmark" => Some(Type::Int),
+                    "sleep" => Some(Type::Nothing),
+                    _ => None,
+                }
+            } else if norm == "math" {
+                match method {
+                    "abs" | "min" | "max" | "clamp" | "pow" | "sqr" => Some(Type::Int),
+                    _ => None,
+                }
+            } else if norm == "mem" || norm == "mem.arena" {
+                match method {
+                    "allocate" => Some(Type::Custom("Mem.ArenaSector".to_string())),
+                    _ => None,
+                }
+            } else if norm == "mem.arenasector" || norm == "sector" {
+                match method {
+                    "insert" | "reset" => Some(Type::Nothing),
+                    "count" | "allocated" => Some(Type::Int),
+                    "nothing?" => Some(Type::Boolean),
+                    _ => None,
+                }
+            } else {
+                for p in all_programs {
+                    for st in &p.structures {
+                        if st.name == *custom_name {
+                            for m in &st.methods {
+                                if m.name == method {
+                                    return Some(m.return_type.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn resolve_type_of_prefix(prefix: &str, all_programs: &[&Program], full_text: &str) -> Option<Type> {
+    let trimmed = prefix.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let lower = trimmed.to_lowercase();
+    match lower.as_str() {
+        "io" => return Some(Type::Custom("Io".to_string())),
+        "fs" => return Some(Type::Custom("Fs".to_string())),
+        "cli" => return Some(Type::Custom("Cli".to_string())),
+        "time" => return Some(Type::Custom("Time".to_string())),
+        "math" => return Some(Type::Custom("Math".to_string())),
+        "mem" => return Some(Type::Custom("Mem".to_string())),
+        "mem.arena" => return Some(Type::Custom("Mem.arena".to_string())),
+        "arenasector" | "mem.arenasector" | "sector" => return Some(Type::Custom("Mem.ArenaSector".to_string())),
+        "env" => return Some(Type::Custom("Env".to_string())),
+        "machine" | "console" => return Some(Type::Custom("Machine".to_string())),
+        "random" => return Some(Type::Custom("Random".to_string())),
+        "http" => return Some(Type::Custom("Http".to_string())),
+        "json" => return Some(Type::Custom("Json".to_string())),
+        "webview" => return Some(Type::Custom("Webview".to_string())),
+        "file" => return Some(Type::Custom("Io.File".to_string())),
+        "dir" => return Some(Type::Custom("Fs.Dir".to_string())),
+        _ => {}
+    }
+
+    if trimmed.ends_with(']') {
+        if let Some(open_bracket) = trimmed.rfind('[') {
+            let base = &trimmed[..open_bracket];
+            if let Some(base_ty) = resolve_type_of_prefix(base, all_programs, full_text) {
+                match base_ty {
+                    Type::Vect(inner) => return Some(*inner),
+                    Type::Map(_, v) => return Some(*v),
+                    Type::String => return Some(Type::Char),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    if trimmed.ends_with(')') {
+        if let Some(open_paren) = trimmed.rfind('(') {
+            let before_paren = trimmed[..open_paren].trim_end();
+            if let Some(dot_idx) = before_paren.rfind('.') {
+                let base = &before_paren[..dot_idx];
+                let method = &before_paren[dot_idx + 1..];
+                if let Some(base_ty) = resolve_type_of_prefix(base, all_programs, full_text) {
+                    return resolve_method_return_type(&base_ty, method, all_programs);
+                }
+            }
+        }
+    } else if let Some(dot_idx) = trimmed.rfind('.') {
+        let base = &trimmed[..dot_idx];
+        let field = &trimmed[dot_idx + 1..];
+        if let Some(base_ty) = resolve_type_of_prefix(base, all_programs, full_text) {
+            if let Some(ret) = resolve_method_return_type(&base_ty, field, all_programs) {
+                return Some(ret);
+            }
+            if let Type::Custom(ref st_name) = base_ty {
+                for p in all_programs {
+                    for st in &p.structures {
+                        if st.name == *st_name {
+                            for (f_name, f_ty) in &st.fields {
+                                if f_name == field {
+                                    return Some(f_ty.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for p in all_programs {
+        let vars = collect_all_variables(p);
+        for (name, ty, _) in vars {
+            if name == trimmed {
+                return Some(ty);
+            }
+        }
+    }
+
+    for p in all_programs {
+        for st in &p.structures {
+            if st.name == trimmed {
+                return Some(Type::Custom(st.name.clone()));
+            }
+        }
+        for m in &p.modules {
+            if m.name == trimmed {
+                return Some(Type::Custom(m.name.clone()));
+            }
+        }
+    }
+
+    for (name, ty) in scan_variables_from_text(full_text) {
+        if name == trimmed {
+            return Some(ty);
+        }
+    }
+
+    None
+}
+
+fn string_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "chars()",
+            "kind": 2,
+            "detail": "chars(): vect<char> - Returns a vector of characters",
+            "insertText": "chars()"
+        }),
+        json!({
+            "label": "len()",
+            "kind": 2,
+            "detail": "len(): int - Returns length of string",
+            "insertText": "len()"
+        }),
+        json!({
+            "label": "empty?()",
+            "kind": 2,
+            "detail": "empty?(): bool - Checks if string is empty",
+            "insertText": "empty?()"
+        }),
+        json!({
+            "label": "split(sep)",
+            "kind": 2,
+            "detail": "split(sep: string): vect<string> - Splits string by separator",
+            "insertText": "split(\"${1:sep}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "trim()",
+            "kind": 2,
+            "detail": "trim(): string - Trims whitespace from both ends",
+            "insertText": "trim()"
+        }),
+        json!({
+            "label": "trim_start()",
+            "kind": 2,
+            "detail": "trim_start(): string - Trims leading whitespace",
+            "insertText": "trim_start()"
+        }),
+        json!({
+            "label": "trim_end()",
+            "kind": 2,
+            "detail": "trim_end(): string - Trims trailing whitespace",
+            "insertText": "trim_end()"
+        }),
+        json!({
+            "label": "contains(sub)",
+            "kind": 2,
+            "detail": "contains(sub: string): bool - Checks if string contains substring",
+            "insertText": "contains(\"${1:sub}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "replace(from, to)",
+            "kind": 2,
+            "detail": "replace(from: string, to: string): string - Replaces occurrences of from with to",
+            "insertText": "replace(\"${1:from}\", \"${2:to}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "starts_with?(prefix)",
+            "kind": 2,
+            "detail": "starts_with?(prefix: string): bool - Checks if string starts with prefix",
+            "insertText": "starts_with?(\"${1:prefix}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "ends_with?(suffix)",
+            "kind": 2,
+            "detail": "ends_with?(suffix: string): bool - Checks if string ends with suffix",
+            "insertText": "ends_with?(\"${1:suffix}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "to_lower()",
+            "kind": 2,
+            "detail": "to_lower(): string - Converts string to lowercase",
+            "insertText": "to_lower()"
+        }),
+        json!({
+            "label": "to_upper()",
+            "kind": 2,
+            "detail": "to_upper(): string - Converts string to uppercase",
+            "insertText": "to_upper()"
+        }),
+        json!({
+            "label": "to_int()",
+            "kind": 2,
+            "detail": "to_int(): int - Parses string as signed integer",
+            "insertText": "to_int()"
+        }),
+        json!({
+            "label": "to_float()",
+            "kind": 2,
+            "detail": "to_float(): float - Parses string as float",
+            "insertText": "to_float()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?(): bool - Checks if string is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn file_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "content()",
+            "kind": 2,
+            "detail": "content(): string - Reads the entire file content as string",
+            "insertText": "content()"
+        }),
+        json!({
+            "label": "getline(line)",
+            "kind": 2,
+            "detail": "getline(line_number: int): string - Reads a single line by 1-based index",
+            "insertText": "getline(${1:1})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "write(text)",
+            "kind": 2,
+            "detail": "write(text: string): nothing - Appends text to the file",
+            "insertText": "write(${1:text})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "reset()",
+            "kind": 2,
+            "detail": "reset(): nothing - Clears file content",
+            "insertText": "reset()"
+        }),
+        json!({
+            "label": "delete()",
+            "kind": 2,
+            "detail": "delete(): nothing - Deletes the file",
+            "insertText": "delete()"
+        }),
+        json!({
+            "label": "exists?()",
+            "kind": 2,
+            "detail": "exists?(): bool - Checks whether the file exists",
+            "insertText": "exists?()"
+        }),
+        json!({
+            "label": "empty?()",
+            "kind": 2,
+            "detail": "empty?(): bool - Checks whether the file is empty",
+            "insertText": "empty?()"
+        }),
+        json!({
+            "label": "something?()",
+            "kind": 2,
+            "detail": "something?(): bool - Checks whether file has content",
+            "insertText": "something?()"
+        }),
+        json!({
+            "label": "size()",
+            "kind": 2,
+            "detail": "size(): int - Returns file size in bytes",
+            "insertText": "size()"
+        }),
+        json!({
+            "label": "bytelen()",
+            "kind": 2,
+            "detail": "bytelen(): int - Returns file size in bytes",
+            "insertText": "bytelen()"
+        }),
+        json!({
+            "label": "linelen()",
+            "kind": 2,
+            "detail": "linelen(): int - Returns line count of file",
+            "insertText": "linelen()"
+        }),
+        json!({
+            "label": "symlen()",
+            "kind": 2,
+            "detail": "symlen(): int - Returns character count of file",
+            "insertText": "symlen()"
+        }),
+        json!({
+            "label": "read()",
+            "kind": 2,
+            "detail": "read(): string - Reads entire file content",
+            "insertText": "read()"
+        }),
+        json!({
+            "label": "close()",
+            "kind": 2,
+            "detail": "close(): nothing - Closes file handle",
+            "insertText": "close()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?(): bool - Checks if file handle is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn dir_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "open(sub)",
+            "kind": 2,
+            "detail": "open(sub: string): Fs.Dir - Opens subdirectory handle",
+            "insertText": "open(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "create()",
+            "kind": 2,
+            "detail": "create(): nothing - Creates directory if not exists",
+            "insertText": "create()"
+        }),
+        json!({
+            "label": "delete()",
+            "kind": 2,
+            "detail": "delete(): nothing - Deletes directory",
+            "insertText": "delete()"
+        }),
+        json!({
+            "label": "rename(name)",
+            "kind": 2,
+            "detail": "rename(name: string): nothing - Renames directory",
+            "insertText": "rename(\"${1:name}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "reset()",
+            "kind": 2,
+            "detail": "reset(): nothing - Clears directory contents",
+            "insertText": "reset()"
+        }),
+        json!({
+            "label": "get_children()",
+            "kind": 2,
+            "detail": "get_children(): vect<string> - Lists all child entries",
+            "insertText": "get_children()"
+        }),
+        json!({
+            "label": "files()",
+            "kind": 2,
+            "detail": "files(): vect<string> - Lists files in directory",
+            "insertText": "files()"
+        }),
+        json!({
+            "label": "dirs()",
+            "kind": 2,
+            "detail": "dirs(): vect<string> - Lists subdirectories",
+            "insertText": "dirs()"
+        }),
+        json!({
+            "label": "walk()",
+            "kind": 2,
+            "detail": "walk(): vect<string> - Recursively walks descendant files",
+            "insertText": "walk()"
+        }),
+        json!({
+            "label": "join(sub)",
+            "kind": 2,
+            "detail": "join(sub: string): string - Joins subpath to directory path",
+            "insertText": "join(\"${1:sub}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "exists?()",
+            "kind": 2,
+            "detail": "exists?(): bool - Checks if directory exists",
+            "insertText": "exists?()"
+        }),
+        json!({
+            "label": "empty?()",
+            "kind": 2,
+            "detail": "empty?(): bool - Checks if directory is empty",
+            "insertText": "empty?()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?(): bool - Checks if directory handle is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn vect_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "push(item)",
+            "kind": 2,
+            "detail": "push(item: T): nothing - Appends an element to the vector",
+            "insertText": "push(${1:item})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "len()",
+            "kind": 2,
+            "detail": "len(): int - Returns number of elements",
+            "insertText": "len()"
+        }),
+        json!({
+            "label": "get(index)",
+            "kind": 2,
+            "detail": "get(index: int): T - Gets element at index",
+            "insertText": "get(${1:index})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "pop()",
+            "kind": 2,
+            "detail": "pop(): T - Removes and returns the last element",
+            "insertText": "pop()"
+        }),
+        json!({
+            "label": "empty?()",
+            "kind": 2,
+            "detail": "empty?(): bool - Checks if vector is empty",
+            "insertText": "empty?()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?(): bool - Checks if vector is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn map_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "insert(key, value)",
+            "kind": 2,
+            "detail": "insert(key: K, value: V): nothing - Inserts key-value pair",
+            "insertText": "insert(${1:key}, ${2:value})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "get(key)",
+            "kind": 2,
+            "detail": "get(key: K): V - Gets value for key or nothing",
+            "insertText": "get(${1:key})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "contains(key)",
+            "kind": 2,
+            "detail": "contains(key: K): bool - Checks if key exists in map",
+            "insertText": "contains(${1:key})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "len()",
+            "kind": 2,
+            "detail": "len(): int - Returns number of entries in map",
+            "insertText": "len()"
+        }),
+        json!({
+            "label": "empty?()",
+            "kind": 2,
+            "detail": "empty?(): bool - Checks if map is empty",
+            "insertText": "empty?()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?(): bool - Checks if map is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn io_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "open(path)",
+            "kind": 2,
+            "detail": "open(path: string) -> Io.File - Opens a file handle",
+            "insertText": "open(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "read(path)",
+            "kind": 2,
+            "detail": "read(path: string) -> string - Reads entire file content",
+            "insertText": "read(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "write(path, content)",
+            "kind": 2,
+            "detail": "write(path: string, content: string) -> nothing - Writes text into file",
+            "insertText": "write(\"${1:path}\", \"${2:content}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "copy(from, to)",
+            "kind": 2,
+            "detail": "copy(from: string, to: string) -> nothing - Copies file to destination",
+            "insertText": "copy(\"${1:from}\", \"${2:to}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "move(from, to)",
+            "kind": 2,
+            "detail": "move(from: string, to: string) -> nothing - Moves file to destination",
+            "insertText": "move(\"${1:from}\", \"${2:to}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "delete(path)",
+            "kind": 2,
+            "detail": "delete(path: string) -> nothing - Deletes file",
+            "insertText": "delete(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "size(path)",
+            "kind": 2,
+            "detail": "size(path: string) -> int - Returns file size in bytes",
+            "insertText": "size(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "exists?(path)",
+            "kind": 2,
+            "detail": "exists?(path: string) -> bool - Checks if file exists",
+            "insertText": "exists?(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "file?(path)",
+            "kind": 2,
+            "detail": "file?(path: string) -> bool - Checks if path is a file",
+            "insertText": "file?(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn fs_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "open(path)",
+            "kind": 2,
+            "detail": "open(path: string) -> Fs.Dir - Opens directory handle",
+            "insertText": "open(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "exists?(path)",
+            "kind": 2,
+            "detail": "exists?(path: string) -> bool - Checks if file or directory exists",
+            "insertText": "exists?(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "file?(path)",
+            "kind": 2,
+            "detail": "file?(path: string) -> bool - Checks if path is a regular file",
+            "insertText": "file?(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "dir?(path)",
+            "kind": 2,
+            "detail": "dir?(path: string) -> bool - Checks if path is a directory",
+            "insertText": "dir?(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "join(a, b)",
+            "kind": 2,
+            "detail": "join(a: string, b: string) -> string - Joins two path components",
+            "insertText": "join(\"${1:a}\", \"${2:b}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "extension(path)",
+            "kind": 2,
+            "detail": "extension(path: string) -> string - Returns file extension",
+            "insertText": "extension(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "filename(path)",
+            "kind": 2,
+            "detail": "filename(path: string) -> string - Returns file name with extension",
+            "insertText": "filename(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "stem(path)",
+            "kind": 2,
+            "detail": "stem(path: string) -> string - Returns file name without extension",
+            "insertText": "stem(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "parent(path)",
+            "kind": 2,
+            "detail": "parent(path: string) -> string - Returns parent directory path",
+            "insertText": "parent(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "abs(path)",
+            "kind": 2,
+            "detail": "abs(path: string) -> string - Returns absolute canonical path",
+            "insertText": "abs(\"${1:path}\")",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn cli_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "arguments()",
+            "kind": 2,
+            "detail": "arguments() -> vect<string> - Returns command-line arguments",
+            "insertText": "arguments()"
+        }),
+        json!({
+            "label": "paint(text, color)",
+            "kind": 2,
+            "detail": "paint(text: string, color: hexcolor) -> string - Colors text with ANSI hexcolor",
+            "insertText": "paint(\"${1:text}\", #(00FF00))",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn time_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "now()",
+            "kind": 2,
+            "detail": "now() -> int - Current unix timestamp in seconds",
+            "insertText": "now()"
+        }),
+        json!({
+            "label": "now_ms()",
+            "kind": 2,
+            "detail": "now_ms() -> int - Current unix timestamp in milliseconds",
+            "insertText": "now_ms()"
+        }),
+        json!({
+            "label": "sleep(ms)",
+            "kind": 2,
+            "detail": "sleep(ms: int) -> nothing - Suspends thread execution",
+            "insertText": "sleep(${1:1000})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "elapsed(start_ms)",
+            "kind": 2,
+            "detail": "elapsed(start_ms: int) -> int - Milliseconds elapsed since start_ms",
+            "insertText": "elapsed(${1:start_ms})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "benchmark({ ... })",
+            "kind": 2,
+            "detail": "benchmark(block) -> int - Measures execution duration in ms",
+            "insertText": "benchmark({\n\t$0\n})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn math_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "abs(n)",
+            "kind": 2,
+            "detail": "abs(n: int) -> int - Absolute value",
+            "insertText": "abs(${1:n})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "min(a, b)",
+            "kind": 2,
+            "detail": "min(a: int, b: int) -> int - Minimum of two integers",
+            "insertText": "min(${1:a}, ${2:b})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "max(a, b)",
+            "kind": 2,
+            "detail": "max(a: int, b: int) -> int - Maximum of two integers",
+            "insertText": "max(${1:a}, ${2:b})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "clamp(val, min, max)",
+            "kind": 2,
+            "detail": "clamp(val: int, min: int, max: int) -> int - Clamps integer in range",
+            "insertText": "clamp(${1:val}, ${2:min}, ${3:max})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "pow(base, exp)",
+            "kind": 2,
+            "detail": "pow(base: int, exp: int) -> int - Base raised to exponent",
+            "insertText": "pow(${1:base}, ${2:exp})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "sqr(n)",
+            "kind": 2,
+            "detail": "sqr(n: int) -> int - Square of an integer",
+            "insertText": "sqr(${1:n})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn mem_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "arena",
+            "kind": 9,
+            "detail": "module arena - Memory Arena Sector Allocator"
+        }),
+        json!({
+            "label": "arena.allocate(cap)",
+            "kind": 2,
+            "detail": "arena.allocate([capacity: int]) -> Mem.ArenaSector",
+            "insertText": "arena.allocate(${1:1024})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn sector_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "insert(object)",
+            "kind": 2,
+            "detail": "insert(object: everything) -> nothing - Stores object in arena",
+            "insertText": "insert(${1:object})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "reset()",
+            "kind": 2,
+            "detail": "reset() -> nothing - Frees all objects in arena",
+            "insertText": "reset()"
+        }),
+        json!({
+            "label": "count()",
+            "kind": 2,
+            "detail": "count() -> int - Number of active objects in arena",
+            "insertText": "count()"
+        }),
+        json!({
+            "label": "allocated()",
+            "kind": 2,
+            "detail": "allocated() -> int - Bytes allocated in arena",
+            "insertText": "allocated()"
+        }),
+        json!({
+            "label": "nothing?()",
+            "kind": 2,
+            "detail": "nothing?() -> bool - Checks if arena sector is nothing",
+            "insertText": "nothing?()"
+        }),
+    ]
+}
+
+fn random_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "int(min, max)",
+            "kind": 2,
+            "detail": "int(min: int, max: int) -> int - Generates random integer",
+            "insertText": "int(${1:min}, ${2:max})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "float(min, max)",
+            "kind": 2,
+            "detail": "float(min: float, max: float) -> float - Generates random float",
+            "insertText": "float(${1:min}, ${2:max})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "boolean()",
+            "kind": 2,
+            "detail": "boolean() -> bool - Generates random boolean",
+            "insertText": "boolean()"
+        }),
+        json!({
+            "label": "choice(v)",
+            "kind": 2,
+            "detail": "choice(v: vect) -> something - Picks random element",
+            "insertText": "choice(${1:v})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn http_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "get(url)",
+            "kind": 2,
+            "detail": "get(url: string) -> string - HTTP GET request returning body",
+            "insertText": "get(\"${1:url}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "post(url, data)",
+            "kind": 2,
+            "detail": "post(url: string, data: string) -> string - HTTP POST request",
+            "insertText": "post(\"${1:url}\", \"${2:data}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "download(url, path)",
+            "kind": 2,
+            "detail": "download(url: string, path: string) -> bool - Downloads file from URL",
+            "insertText": "download(\"${1:url}\", \"${2:path}\")",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn json_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "parse(text)",
+            "kind": 2,
+            "detail": "parse(text: string) -> something - Parses JSON string into data structure",
+            "insertText": "parse(${1:text})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "stringify(value)",
+            "kind": 2,
+            "detail": "stringify(value: something) -> string - Serializes value into JSON string",
+            "insertText": "stringify(${1:value})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn webview_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "open(title, url, width, height)",
+            "kind": 2,
+            "detail": "open(title: string, url: string, width: int, height: int) -> nothing",
+            "insertText": "open(\"${1:title}\", \"${2:url}\", ${3:800}, ${4:600})",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "eval(code)",
+            "kind": 2,
+            "detail": "eval(code: string) -> nothing - Evaluates JavaScript in webview",
+            "insertText": "eval(\"${1:code}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "run()",
+            "kind": 2,
+            "detail": "run() -> nothing - Runs webview message loop",
+            "insertText": "run()"
+        }),
+        json!({
+            "label": "on_message(fn)",
+            "kind": 2,
+            "detail": "on_message(callback: function) -> nothing - Registers IPC handler",
+            "insertText": "on_message(${1:callback})",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn env_completions() -> Vec<Value> {
+    vec![
+        json!({
+            "label": "current()",
+            "kind": 2,
+            "detail": "current() -> string - Returns current working directory",
+            "insertText": "current()"
+        }),
+        json!({
+            "label": "home()",
+            "kind": 2,
+            "detail": "home() -> string - Returns user home directory",
+            "insertText": "home()"
+        }),
+        json!({
+            "label": "get(key)",
+            "kind": 2,
+            "detail": "get(key: string) -> string - Gets environment variable",
+            "insertText": "get(\"${1:key}\")",
+            "insertTextFormat": 2
+        }),
+        json!({
+            "label": "set(key, val)",
+            "kind": 2,
+            "detail": "set(key: string, val: string) -> nothing - Sets environment variable",
+            "insertText": "set(\"${1:key}\", \"${2:val}\")",
+            "insertTextFormat": 2
+        }),
+    ]
+}
+
+fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported: &[Program], full_text: &str) -> Vec<Value> {
+    let all_programs: Vec<&Program> = program_opt.into_iter().chain(imported.iter()).collect();
+    let resolved_ty = resolve_type_of_prefix(prefix, &all_programs, full_text);
+
+    if let Some(ref ty) = resolved_ty {
+        match ty {
+            Type::String => return string_completions(),
+            Type::Vect(_) => return vect_completions(),
+            Type::Map(_, _) => return map_completions(),
+            Type::Custom(name) => {
+                let norm = name.to_lowercase();
+                if norm == "io.file" || norm == "file" {
+                    return file_completions();
+                } else if norm == "fs.dir" || norm == "dir" {
+                    return dir_completions();
+                } else if norm == "io" {
+                    return io_completions();
+                } else if norm == "fs" {
+                    return fs_completions();
+                } else if norm == "cli" {
+                    return cli_completions();
+                } else if norm == "time" {
+                    return time_completions();
+                } else if norm == "math" {
+                    return math_completions();
+                } else if norm == "mem" {
+                    return mem_completions();
+                } else if norm == "mem.arena" {
+                    return vec![json!({
+                        "label": "allocate(cap)",
+                        "kind": 2,
+                        "detail": "allocate([capacity: int]) -> Mem.ArenaSector",
+                        "insertText": "allocate(${1:1024})",
+                        "insertTextFormat": 2
+                    })];
+                } else if norm == "mem.arenasector" || norm == "sector" {
+                    return sector_completions();
+                } else if norm == "env" {
+                    return env_completions();
+                } else if norm == "random" {
+                    return random_completions();
+                } else if norm == "http" {
+                    return http_completions();
+                } else if norm == "json" {
+                    return json_completions();
+                } else if norm == "webview" {
+                    return webview_completions();
+                } else {
+                    let mut struct_members = Vec::new();
+                    for p in &all_programs {
+                        for st in &p.structures {
+                            if st.name == *name {
+                                for m in &st.methods {
+                                    struct_members.push(method_to_completion(m, &st.name));
+                                }
+                                for (f_name, f_ty) in &st.fields {
+                                    struct_members.push(json!({
+                                        "label": f_name,
+                                        "kind": 5, // Field
+                                        "detail": format!("{}: {}", f_name, f_ty)
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                    if !struct_members.is_empty() {
+                        return struct_members;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let lower = prefix.to_lowercase();
+    match lower.as_str() {
+        "io" => return io_completions(),
+        "fs" => return fs_completions(),
+        "cli" => return cli_completions(),
+        "time" => return time_completions(),
+        "math" => return math_completions(),
+        "mem" => return mem_completions(),
+        "mem.arena" => return vec![json!({
+            "label": "allocate(cap)",
+            "kind": 2,
+            "detail": "allocate([capacity: int]) -> Mem.ArenaSector",
+            "insertText": "allocate(${1:1024})",
+            "insertTextFormat": 2
+        })],
+        "mem.arenasector" | "sector" => return sector_completions(),
+        "env" => return env_completions(),
+        "random" => return random_completions(),
+        "http" => return http_completions(),
+        "json" => return json_completions(),
+        "webview" => return webview_completions(),
+        "file" => return file_completions(),
+        "dir" => return dir_completions(),
+        _ => {}
     }
 
     let mut members = Vec::new();
-    let all_programs: Vec<&Program> = program_opt.into_iter().chain(imported.iter()).collect();
-
-    // 1. Direct Module or Structure member match
     for p in &all_programs {
         for m in &p.modules {
             if m.name == prefix {
@@ -1330,7 +2719,6 @@ fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported:
                 }
             }
         }
-
         for st in &p.structures {
             if st.name == prefix {
                 for m in &st.methods {
@@ -1342,41 +2730,6 @@ fn get_member_completions(prefix: &str, program_opt: Option<&Program>, imported:
                         "kind": 5, // Field
                         "detail": format!("{}: {}", f_name, f_ty)
                     }));
-                }
-            }
-        }
-    }
-
-    // 2. Variable instance member match (e.g. `app.`, `win.`, `player.`)
-    let mut resolved_type = None;
-    for p in &all_programs {
-        for stmt in &p.statements {
-            if let Statement::Var(v) = stmt {
-                if v.name == prefix {
-                    resolved_type = Some(format!("{}", v.ty));
-                    break;
-                }
-            }
-        }
-        if resolved_type.is_some() {
-            break;
-        }
-    }
-
-    if let Some(ty_str) = resolved_type {
-        for p in &all_programs {
-            for st in &p.structures {
-                if st.name == ty_str {
-                    for m in &st.methods {
-                        members.push(method_to_completion(m, &st.name));
-                    }
-                    for (f_name, f_ty) in &st.fields {
-                        members.push(json!({
-                            "label": f_name,
-                            "kind": 5, // Field
-                            "detail": format!("{}: {}", f_name, f_ty)
-                        }));
-                    }
                 }
             }
         }

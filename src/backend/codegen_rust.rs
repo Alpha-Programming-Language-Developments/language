@@ -620,6 +620,10 @@ pub fn alpha_map_get<K: std::hash::Hash + Eq, V: Clone>(m: &HashMap<K, V>, key: 
                     }
                 }
 
+                if method == "chars" && args.is_empty() {
+                    return Ok(format!("{}.chars().collect::<Vec<char>>()", obj_str));
+                }
+
                 let mut arg_strs = Vec::new();
                 for a in args {
                     arg_strs.push(self.transpile_expr(a)?);

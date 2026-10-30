@@ -73,6 +73,7 @@ pub struct FunctionDecl {
     pub visibility: Visibility,
     pub return_type: Type,
     pub is_typechecked: bool,
+    pub is_test: bool,
     pub body: Block,
     pub span: Span,
 }

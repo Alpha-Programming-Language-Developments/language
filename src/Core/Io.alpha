@@ -14,6 +14,7 @@
 
 // Io.File instance methods:
 // file.content()                 - Reads the entire file content as string.
+// file.getline(line_number)      - Reads a specific line by 1-based number.
 // file.write(text)               - Appends text to the file.
 // file.reset()                   - Clears file content.
 // file.delete()                  - Deletes the file.

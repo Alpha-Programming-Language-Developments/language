@@ -504,12 +504,23 @@ var x: int = (2 + 3) * 4 // 20
 ### Методы строк
 - `.len()` — возвращает длину строки в символах (`int`).
 - `.empty?()` — возвращает `true`, если строка пустая (`boolean`).
+- `.chars()` — возвращает вектор символов (`vect<char>`) для итерации и обработки.
 
 Пример:
 ```alpha
 var s: string = "Alpha"
 var length: int = s.len()
 var empty: boolean = s.empty?()
+
+// Итерация по символам через .chars():
+for each char in s.chars() {
+    System.out(char)
+}
+
+// Также поддерживается прямая итерация по строке:
+for each char in s {
+    System.out(char)
+}
 ```
 
 ### Интерполяция строк и многострочные строки

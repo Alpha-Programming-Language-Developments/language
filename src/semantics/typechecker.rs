@@ -1483,13 +1483,22 @@ impl TypeChecker {
 
                 }
 
-                let candidates = [
-
+                let mut candidates = vec![
                     self.working_dir.join("packages.alpaks"),
-
                     PathBuf::from("packages.alpaks"),
-
                 ];
+                if let Ok(cwd) = std::env::current_dir() {
+                    candidates.push(cwd.join("packages.alpaks"));
+                    if let Some(parent) = cwd.parent() {
+                        candidates.push(parent.join("packages.alpaks"));
+                    }
+                }
+                if let Some(parent) = self.working_dir.parent() {
+                    candidates.push(parent.join("packages.alpaks"));
+                }
+                if let Some(root) = crate::driver::project::find_project_root(&self.working_dir) {
+                    candidates.push(root.join("packages.alpaks"));
+                }
 
                 for candidate in &candidates {
 
@@ -2851,6 +2860,24 @@ impl TypeChecker {
 
                     }
 
+                    Type::String => {
+
+                        if key_var.is_some() {
+
+                            return Err(AlphaError::type_error(
+
+                                "Cannot unpack key and value from a string; use 'for each char in str'",
+
+                                *span,
+
+                            ));
+
+                        }
+
+                        self.declare_variable(item_var, Type::Char, false, *span)?;
+
+                    }
+
                     Type::Something => {
 
                         self.declare_variable(item_var, Type::Something, false, *span)?;
@@ -3955,6 +3982,19 @@ impl TypeChecker {
 
                         "empty?" => Ok(Type::Boolean),
 
+                        "chars" => {
+                            if !args.is_empty() {
+                                return Err(AlphaError::type_error("chars() takes no arguments", *span));
+                            }
+                            Ok(Type::Vect(Box::new(Type::Char)))
+                        }
+
+                        "split" => Ok(Type::Vect(Box::new(Type::String))),
+                        "trim" | "trim_start" | "trim_end" | "replace" | "to_lower" | "to_upper" => Ok(Type::String),
+                        "contains" | "starts_with?" | "starts_with" | "ends_with?" | "ends_with" => Ok(Type::Boolean),
+                        "to_int" => Ok(Type::Int),
+                        "to_float" => Ok(Type::Float),
+
                         _ => Ok(Type::Something),
 
                     },
@@ -4231,6 +4271,20 @@ impl TypeChecker {
 
                                 "content" => Ok(Type::String),
 
+                                "getline" => {
+                                    if args.len() != 1 {
+                                        return Err(AlphaError::type_error("file.getline() expects 1 argument (line_number: int)", *span));
+                                    }
+                                    let arg_ty = self.check_expr(&args[0])?;
+                                    if !arg_ty.is_assignable_to(&Type::Int) && !arg_ty.is_assignable_to(&Type::Unt) {
+                                        return Err(AlphaError::type_error(
+                                            format!("file.getline() argument must be integer, found '{}'", arg_ty),
+                                            args[0].span(),
+                                        ));
+                                    }
+                                    Ok(Type::String)
+                                }
+
                                 "reset" => Ok(Type::Nothing),
 
                                 "write" => Ok(Type::Nothing),
@@ -4452,6 +4506,8 @@ impl TypeChecker {
                         }
 
                     }
+
+                    Type::String => Ok(Type::Char),
 
                     _ => Ok(Type::Something),
 

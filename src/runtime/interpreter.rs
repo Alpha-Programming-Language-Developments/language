@@ -168,6 +168,10 @@ impl Interpreter {
 
     }
 
+    pub fn working_dir(&self) -> &std::path::Path {
+        &self.working_dir
+    }
+
 
 
     pub fn register_source_module(&mut self, path: impl Into<String>, source: impl Into<String>) {
@@ -576,6 +580,87 @@ impl Interpreter {
 
         Ok(result)
 
+    }
+
+    /// Executes program declarations without calling 'main', and then calls the specified test function.
+    pub fn run_test_function(
+        &mut self,
+        program: &Program,
+        file_name: Option<&str>,
+        test_name: &str,
+    ) -> Result<Value, AlphaError> {
+        let old_file = self.current_file.clone();
+        self.current_file = file_name.map(|s| s.to_string());
+
+        self.load_packages_alpaks();
+
+        for import in &program.imports {
+            self.execute_import(import)?;
+        }
+
+        for st in &program.structures {
+            self.structures.insert(st.name.clone(), st.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Structure(st) = stmt {
+                self.structures.insert(st.name.clone(), st.clone());
+            }
+        }
+
+        for en in &program.enums {
+            self.enums.insert(en.name.clone(), en.clone());
+        }
+        for stmt in &program.statements {
+            if let Statement::Enum(en) = stmt {
+                self.enums.insert(en.name.clone(), en.clone());
+            }
+        }
+
+        for m in &program.modules {
+            self.modules.insert(m.name.clone(), m.clone());
+            for func in &m.functions {
+                let qname = format!("{}.{}", m.name, func.name);
+                self.functions.insert(
+                    qname,
+                    StoredFunction {
+                        decl: func.clone(),
+                        source_file: self.current_file.clone(),
+                    },
+                );
+            }
+        }
+
+        for func in &program.functions {
+            self.functions.insert(
+                func.name.clone(),
+                StoredFunction {
+                    decl: func.clone(),
+                    source_file: self.current_file.clone(),
+                },
+            );
+        }
+
+        for stmt in &program.statements {
+            if let Statement::Schedule { .. } = stmt {
+                continue;
+            }
+            let _ = self.eval_statement(stmt)?;
+        }
+
+        let test_func = self
+            .functions
+            .get(test_name)
+            .cloned()
+            .ok_or_else(|| {
+                AlphaError::runtime(
+                    format!("Test function '{}' not found", test_name),
+                    Default::default(),
+                )
+            })?;
+
+        let res = self.call_function(&test_func.decl, &[], Span::default());
+        self.current_file = old_file;
+        res
     }
 
 
@@ -1112,13 +1197,22 @@ impl Interpreter {
 
     pub fn load_packages_alpaks(&mut self) {
 
-        let candidates = [
-
+        let mut candidates = vec![
             self.working_dir.join("packages.alpaks"),
-
             PathBuf::from("packages.alpaks"),
-
         ];
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("packages.alpaks"));
+            if let Some(parent) = cwd.parent() {
+                candidates.push(parent.join("packages.alpaks"));
+            }
+        }
+        if let Some(parent) = self.working_dir.parent() {
+            candidates.push(parent.join("packages.alpaks"));
+        }
+        if let Some(root) = crate::driver::project::find_project_root(&self.working_dir) {
+            candidates.push(root.join("packages.alpaks"));
+        }
 
         for candidate in &candidates {
 
@@ -2126,6 +2220,23 @@ impl Interpreter {
 
                         }
 
+                    }
+
+                    Value::String(s) => {
+                        let chars: Vec<char> = s.chars().collect();
+                        for c in chars {
+                            self.env.enter_scope();
+                            self.env.define(item_var.clone(), Value::Char(c), false);
+                            let signal = self.eval_block(body)?;
+                            self.env.exit_scope();
+
+                            match signal {
+                                ControlSignal::Return(_) => return Ok(signal),
+                                ControlSignal::Break => break,
+                                ControlSignal::Continue => continue,
+                                ControlSignal::None => {}
+                            }
+                        }
                     }
 
                     _ => {
@@ -3380,6 +3491,67 @@ impl Interpreter {
 
                         "empty?" => Ok(Value::Boolean(s.is_empty())),
 
+                        "chars" => {
+                            if !evaluated_args.is_empty() {
+                                return Err(AlphaError::runtime("chars() takes no arguments", *span));
+                            }
+                            let char_vals: Vec<Value> = s.chars().map(Value::Char).collect();
+                            Ok(Value::Vect(std::rc::Rc::new(std::cell::RefCell::new(char_vals))))
+                        }
+
+                        "split" => {
+                            let delim = evaluated_args.first().map(|a| a.to_string()).unwrap_or_default();
+                            let parts: Vec<Value> = if delim.is_empty() {
+                                s.chars().map(|c| Value::String(c.to_string())).collect()
+                            } else {
+                                s.split(&delim).map(|p| Value::String(p.to_string())).collect()
+                            };
+                            Ok(Value::Vect(std::rc::Rc::new(std::cell::RefCell::new(parts))))
+                        }
+
+                        "trim" => Ok(Value::String(s.trim().to_string())),
+                        "trim_start" => Ok(Value::String(s.trim_start().to_string())),
+                        "trim_end" => Ok(Value::String(s.trim_end().to_string())),
+
+                        "contains" => {
+                            let sub = evaluated_args.first().map(|a| a.to_string()).unwrap_or_default();
+                            Ok(Value::Boolean(s.contains(&sub)))
+                        }
+
+                        "replace" => {
+                            if evaluated_args.len() < 2 {
+                                return Err(AlphaError::runtime("replace() requires 2 arguments: (from, to)", *span));
+                            }
+                            let from = evaluated_args[0].to_string();
+                            let to = evaluated_args[1].to_string();
+                            Ok(Value::String(s.replace(&from, &to)))
+                        }
+
+                        "starts_with?" | "starts_with" => {
+                            let prefix = evaluated_args.first().map(|a| a.to_string()).unwrap_or_default();
+                            Ok(Value::Boolean(s.starts_with(&prefix)))
+                        }
+
+                        "ends_with?" | "ends_with" => {
+                            let suffix = evaluated_args.first().map(|a| a.to_string()).unwrap_or_default();
+                            Ok(Value::Boolean(s.ends_with(&suffix)))
+                        }
+
+                        "to_lower" => Ok(Value::String(s.to_lowercase())),
+                        "to_upper" => Ok(Value::String(s.to_uppercase())),
+
+                        "to_int" => {
+                            s.trim().parse::<i64>().map(Value::Int).map_err(|_| {
+                                AlphaError::runtime(format!("Cannot parse '{}' as integer", s), *span)
+                            })
+                        }
+
+                        "to_float" => {
+                            s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+                                AlphaError::runtime(format!("Cannot parse '{}' as float", s), *span)
+                            })
+                        }
+
                         _ => Err(AlphaError::runtime(
 
                             format!("Unknown method '{}' on string", method),
@@ -4134,27 +4306,7 @@ impl Interpreter {
 
                                     }
 
-                                    if let Some(ref u) = cfg.url {
 
-                                        let is_remote = u.starts_with("http://") || u.starts_with("https://");
-
-                                        if !is_remote {
-
-                                            let candidate = self.working_dir.join(u);
-
-                                            if candidate.is_file() {
-
-                                                if let Ok(content) = std::fs::read_to_string(&candidate) {
-
-                                                    cfg.html = Some(content);
-
-                                                }
-
-                                            }
-
-                                        }
-
-                                    }
 
                                     self.webview_config = cfg;
 

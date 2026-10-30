@@ -29,7 +29,7 @@ impl Parser {
         while !self.is_at_end() {
             if self.check(&TokenKind::Import) {
                 imports.push(self.parse_import()?);
-            } else if self.check(&TokenKind::Function) {
+            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
                 functions.push(self.parse_function()?);
             } else if self.check(&TokenKind::Structure) {
                 let st = self.parse_structure()?;
@@ -102,7 +102,7 @@ impl Parser {
                 if is_active {
                     imports.push(imp);
                 }
-            } else if self.check(&TokenKind::Function) {
+            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
                 let func = self.parse_function()?;
                 if is_active {
                     functions.push(func);
@@ -204,6 +204,9 @@ impl Parser {
                         let t = self.advance();
                         path_str.push_str(&t.text);
                         last_span = t.span;
+                        if path_str.ends_with(".alpha") {
+                            break;
+                        }
                     }
                     _ => break,
                 }
@@ -301,7 +304,12 @@ impl Parser {
     // Function Declarations
     // -------------------------------------------------------------
     fn parse_function(&mut self) -> Result<FunctionDecl, AlphaError> {
-        let start_span = self.expect(&TokenKind::Function)?.span;
+        let is_test_prefix = self.match_token(&TokenKind::HashTest);
+        let start_span = if is_test_prefix && !self.check(&TokenKind::Function) {
+            self.previous().span
+        } else {
+            self.expect(&TokenKind::Function)?.span
+        };
 
         let name = self.expect_ident()?.text;
         self.expect(&TokenKind::LParen)?;
@@ -330,31 +338,31 @@ impl Parser {
         let mut visibility = Visibility::Here;
         let mut return_type = Type::Nothing;
         let mut is_typechecked = self.match_token(&TokenKind::HashTypechecked);
+        let mut is_test = is_test_prefix || self.match_token(&TokenKind::HashTest);
 
         if self.match_token(&TokenKind::LBracket) {
-            // First item could be visibility (here/public) or a type
-            if self.match_token(&TokenKind::Here) {
-                visibility = Visibility::Here;
-                if self.match_token(&TokenKind::Comma) {
+            while !self.check(&TokenKind::RBracket) && !self.is_at_end() {
+                if self.match_token(&TokenKind::Here) {
+                    visibility = Visibility::Here;
+                } else if self.match_token(&TokenKind::Public) {
+                    visibility = Visibility::Public;
+                } else if self.match_token(&TokenKind::HashTypechecked) {
+                    is_typechecked = true;
+                } else if self.match_token(&TokenKind::HashTest) {
+                    is_test = true;
+                } else {
                     return_type = self.parse_type()?;
                 }
-            } else if self.match_token(&TokenKind::Public) {
-                visibility = Visibility::Public;
-                if self.match_token(&TokenKind::Comma) {
-                    return_type = self.parse_type()?;
-                }
-            } else {
-                // Must be return type directly
-                return_type = self.parse_type()?;
-            }
-            if self.match_token(&TokenKind::Comma) && self.match_token(&TokenKind::HashTypechecked) {
-                is_typechecked = true;
+                self.match_token(&TokenKind::Comma);
             }
             self.expect(&TokenKind::RBracket)?;
         }
 
         if !is_typechecked {
             is_typechecked = self.match_token(&TokenKind::HashTypechecked);
+        }
+        if !is_test {
+            is_test = self.match_token(&TokenKind::HashTest);
         }
 
         let body = self.parse_block()?;
@@ -366,6 +374,7 @@ impl Parser {
             visibility,
             return_type,
             is_typechecked,
+            is_test,
             body,
             span: start_span.merge(end_span),
         })
@@ -516,7 +525,7 @@ impl Parser {
         let mut variables = Vec::new();
         self.skip_semicolons();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
-            if self.check(&TokenKind::Function) {
+            if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
                 functions.push(self.parse_function()?);
             } else if self.check(&TokenKind::Structure) {
                 structures.push(self.parse_structure()?);
@@ -1540,7 +1549,18 @@ impl Parser {
             }
 
             TokenKind::Ident(name) => Ok(Expr::Variable(name, tok.span)),
-            TokenKind::Schedule | TokenKind::Verify | TokenKind::System | TokenKind::TypeSomething | TokenKind::TypeEverything | TokenKind::TypeNothing => Ok(Expr::Variable(tok.text, tok.span)),
+            TokenKind::Schedule
+            | TokenKind::Verify
+            | TokenKind::System
+            | TokenKind::TypeSomething
+            | TokenKind::TypeEverything
+            | TokenKind::TypeNothing
+            | TokenKind::TypeChar
+            | TokenKind::TypeString
+            | TokenKind::TypeInt
+            | TokenKind::TypeFloat
+            | TokenKind::TypeBoolean
+            | TokenKind::TypeHexColor => Ok(Expr::Variable(tok.text, tok.span)),
 
             TokenKind::LParen => {
                 let start_span = tok.span;
@@ -1665,7 +1685,13 @@ impl Parser {
             | TokenKind::System
             | TokenKind::TypeSomething
             | TokenKind::TypeEverything
-            | TokenKind::TypeNothing => Ok(tok),
+            | TokenKind::TypeNothing
+            | TokenKind::TypeChar
+            | TokenKind::TypeString
+            | TokenKind::TypeInt
+            | TokenKind::TypeFloat
+            | TokenKind::TypeBoolean
+            | TokenKind::TypeHexColor => Ok(tok),
             _ => Err(AlphaError::parse(
                 format!("Expected identifier, found '{}'", tok.text),
                 tok.span,

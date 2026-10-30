@@ -4,7 +4,7 @@ use crate::runtime::value::{FsDirHandle, IoFileHandle, Value, ValueKey};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
@@ -97,6 +97,34 @@ pub fn call_io_file_method(
                     span,
                 )),
             }
+        }
+        "getline" => {
+            if args.is_empty() {
+                return Err(AlphaError::runtime("file.getline() expects 1 argument (line_number)", span));
+            }
+            let line_num = match &args[0] {
+                Value::Int(i) => *i,
+                Value::Unt(u) => *u as i64,
+                _ => return Err(AlphaError::runtime("file.getline() argument must be an integer", span)),
+            };
+            if line_num < 1 || !path.exists() {
+                return Ok(Value::Nothing);
+            }
+            let file = fs::File::open(&path).map_err(|e| {
+                AlphaError::runtime(format!("Failed to open file {:?}: {}", path, e), span)
+            })?;
+            let reader = BufReader::new(file);
+            let mut current = 1i64;
+            for line_res in reader.lines() {
+                let line = line_res.map_err(|e| {
+                    AlphaError::runtime(format!("Failed to read line from {:?}: {}", path, e), span)
+                })?;
+                if current == line_num {
+                    return Ok(Value::String(line));
+                }
+                current += 1;
+            }
+            Ok(Value::Nothing)
         }
         "reset" => {
             if let Some(parent) = path.parent() {
