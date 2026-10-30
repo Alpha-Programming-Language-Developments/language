@@ -7,7 +7,7 @@
 **A modern, statically-typed, expressive language with intuitive 1-based indexing, powerful package management, and first-class developer ergonomics.**
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?style=for-the-badge)](Cargo.toml)
-[![Build & Tests](https://img.shields.io/badge/tests-59%20passed-success.svg?style=for-the-badge)](tests/alpha_tests.rs)
+[![Build & Tests](https://img.shields.io/badge/tests-59%20passed-success.svg?style=for-the-badge)](tests/alphфa_tests.rs)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20POSIX-orange.svg?style=for-the-badge)](#)
 
@@ -48,7 +48,7 @@ enum Priority {
 
 module GreetingService {
     function greet(name: string, p: Priority) [public, string] {
-        var badge: string = (p == Priority.High) ? paint("[URGENT]", #(FF0000)) : paint("[NORMAL]", #(00FF66))
+        var badge: string = if p == Priority.High: paint("[URGENT]", #(FF0000)) else paint("[NORMAL]", #(00FF66))
         return format("{} Hello, {}! Welcome to Alpha.", badge, name)
     }
 }
@@ -56,7 +56,7 @@ module GreetingService {
 function main() [public, nothing] {
     // 1-based CLI arguments
     var args: vect<string> = cli.arguments()
-    var user: string = (args.len() >= 1) ? args[1] : "Developer"
+    var user: string = if args.len() >= 1: args[1] else "Developer"
 
     // Guaranteed scope cleanup
     make schedule {
@@ -72,7 +72,7 @@ function main() [public, nothing] {
 
 ## 📥 Installation
 
-Alpha requires the **Rust** toolchain (Rust 2024 edition / 1.85+).
+Alpha requires the **LLVM**.
 
 ### 1. Clone the repository
 ```bash
