@@ -665,6 +665,7 @@ impl<'a> Lexer<'a> {
             "everything" => TokenKind::TypeEverything,
             "vect" => TokenKind::TypeVect,
             "map" => TokenKind::TypeMap,
+            "type" => TokenKind::TypeType,
             _ => TokenKind::Ident(text.clone()),
         };
 

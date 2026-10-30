@@ -198,6 +198,7 @@ pub fn alpha_map_get<K: std::hash::Hash + Eq, V: Clone>(m: &HashMap<K, V>, key: 
             }
             Type::Union(_) => "Box<dyn std::any::Any>".to_string(),
             Type::HexColor => "String".to_string(),
+            Type::Type => "()".to_string(),
         }
     }
 
@@ -267,6 +268,9 @@ pub fn alpha_map_get<K: std::hash::Hash + Eq, V: Clone>(m: &HashMap<K, V>, key: 
     }
 
     fn generate_global_var(&mut self, var: &VarDecl) -> Result<(), AlphaError> {
+        if var.ty == Type::Type {
+            return Ok(());
+        }
         let ty_str = Self::to_rust_type(&var.ty);
         let init_expr = self.transpile_expr(&var.init)?;
         self.write_line(&format!("pub static mut {}: {} = {};", var.name, ty_str, init_expr));
@@ -319,6 +323,9 @@ pub fn alpha_map_get<K: std::hash::Hash + Eq, V: Clone>(m: &HashMap<K, V>, key: 
     fn generate_statement(&mut self, stmt: &Statement) -> Result<(), AlphaError> {
         match stmt {
             Statement::Var(var) => {
+                if var.ty == Type::Type {
+                    return Ok(());
+                }
                 let ty_annotation = if var.has_explicit_type {
                     format!(": {}", Self::to_rust_type(&var.ty))
                 } else {

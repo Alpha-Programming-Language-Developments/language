@@ -69,6 +69,7 @@ pub enum TokenKind {
     TypeNothing,
     TypeVect,
     TypeMap,
+    TypeType,
 
     // Identifier (can end with '?' such as is_valid?, nothing?)
     Ident(String),
@@ -196,6 +197,7 @@ impl fmt::Display for TokenKind {
             TokenKind::TypeNothing => write!(f, "nothing"),
             TokenKind::TypeVect => write!(f, "vect"),
             TokenKind::TypeMap => write!(f, "map"),
+            TokenKind::TypeType => write!(f, "type"),
             TokenKind::Ident(id) => write!(f, "{}", id),
             TokenKind::Plus => write!(f, "+"),
             TokenKind::Minus => write!(f, "-"),

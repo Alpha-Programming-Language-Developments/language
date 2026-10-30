@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alpha Programming Language - Official Documentation</title>
+  <link rel="icon" type="image/png" href="https://avatars.githubusercontent.com/u/349414014">
+  <link rel="stylesheet" href="css/gitbook.css">
+</head>
+<body>
+
+  <!-- ======================================================================
+       Top Header Navbar
+       ====================================================================== -->
+  <header class="site-header">
+    <div class="header-left">
+      <a href="#intro" class="brand-logo">
+        <img src="https://avatars.githubusercontent.com/u/349414014" onerror="this.src='assets/logo.png'" alt="Alpha Logo" style="border-radius: 6px; width: 28px; height: 28px; object-fit: cover;">
+        <span>ALPHA</span>
+        <span class="brand-badge">DOCS</span>
+      </a>
+
+      <nav class="header-nav">
+        <a href="#intro" id="navTabDocs" class="nav-tab active">Documentation</a>
+        <a href="#stdlib-cores" id="navTabStdlib" class="nav-tab">Standard Library</a>
+        <a href="#webalph-tooling" id="navTabWebalph" class="nav-tab">WebAlph</a>
+      </nav>
+    </div>
+
+    <div class="header-center">
+      <div class="search-trigger" onclick="openSearch()">
+        <div class="search-hint">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span id="searchTriggerText">Search docs... (Ctrl + K)</span>
+        </div>
+        <span class="kbd-shortcut">Ctrl K</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <!-- Language Switcher -->
+      <button class="lang-switch-btn" id="langSwitchBtn" onclick="toggleLanguage()" title="Switch Language">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+        <span>EN</span>
+      </button>
+
+      <!-- Theme Toggle -->
+      <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+
+      <!-- GitHub CTA Button -->
+      <a href="https://github.com/Alpha-Programming-Language-Developments/language" target="_blank" class="header-cta-btn">
+        GitHub
+      </a>
+    </div>
+  </header>
+
+  <!-- ======================================================================
+       Main App Layout
+       ====================================================================== -->
+  <div class="app-layout">
+
+    <!-- Left Sidebar: Chapter Tree Navigation -->
+    <aside class="sidebar" id="sidebarNav">
+      <!-- Rendered dynamically by app.js -->
+    </aside>
+
+    <!-- Center: Main Reading Content -->
+    <main class="main-content">
+      <!-- Breadcrumbs -->
+      <div class="breadcrumbs" id="breadcrumbs">
+        <span>Documentation</span>
+      </div>
+
+      <!-- Chapter Header -->
+      <div class="chapter-header">
+        <h1 class="chapter-title" id="chapterTitle">Loading...</h1>
+        <p class="chapter-subtitle" id="chapterSubtitle">Please wait</p>
+      </div>
+
+      <!-- Chapter Body -->
+      <article class="content-body" id="chapterBody">
+        <!-- Rendered dynamically by app.js -->
+      </article>
+
+      <!-- Was this helpful? Rating Widget -->
+      <div class="feedback-box">
+        <span class="feedback-label" id="feedbackLabel">Was this helpful?</span>
+        <div class="feedback-buttons" id="feedbackButtons">
+          <button class="feedback-btn" onclick="sendFeedback('up')" title="Helpful">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg>
+          </button>
+          <button class="feedback-btn" onclick="sendFeedback('neutral')" title="Neutral">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+          </button>
+          <button class="feedback-btn" onclick="sendFeedback('down')" title="Not Helpful">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Book Pagination (Page-by-page reading) -->
+      <nav class="pagination-nav" id="paginationNav">
+        <!-- Rendered dynamically by app.js -->
+      </nav>
+    </main>
+
+    <!-- Right Sidebar: On this page (TOC) -->
+    <aside class="toc-sidebar">
+      <div class="toc-title" id="tocTitle">ON THIS PAGE</div>
+      <ul class="toc-list" id="tocList">
+        <!-- Rendered dynamically by app.js -->
+      </ul>
+    </aside>
+
+  </div>
+
+  <!-- ======================================================================
+       Search Modal Overlay (Ctrl + K)
+       ====================================================================== -->
+  <div class="search-modal-backdrop" id="searchModal" onclick="if(event.target === this) closeSearch()">
+    <div class="search-modal">
+      <div class="search-modal-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="searchModalInput" class="search-modal-input" placeholder="Search chapters, topics, code..." autocomplete="off">
+        <span class="kbd-shortcut" onclick="closeSearch()" style="cursor:pointer">ESC</span>
+      </div>
+
+      <div class="search-modal-results" id="searchResults">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+
+      <div class="search-modal-footer">
+        <span>Navigate with mouse or arrows</span>
+        <span>Alpha Official Book</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/chapters-en.js"></script>
+  <script src="js/chapters-ru.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

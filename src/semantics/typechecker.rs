@@ -21,13 +21,18 @@ use std::path::{Path, PathBuf};
 
 
 #[derive(Debug, Clone)]
-
 pub struct SymbolInfo {
-
     pub ty: Type,
-
     pub is_const: bool,
+    pub visibility: Visibility,
+    pub defined_in: Option<String>,
+}
 
+#[derive(Debug, Clone)]
+pub struct TypeAliasInfo {
+    pub target: Type,
+    pub visibility: Visibility,
+    pub defined_in: Option<String>,
 }
 
 
@@ -72,6 +77,8 @@ pub struct TypeChecker {
 
     pub modules: HashMap<String, ModuleDecl>,
 
+    pub type_aliases: HashMap<String, TypeAliasInfo>,
+
     current_structure: Option<String>,
 
     current_return_type: Option<Type>,
@@ -107,6 +114,8 @@ impl TypeChecker {
             enums: HashMap::new(),
 
             modules: HashMap::new(),
+
+            type_aliases: HashMap::new(),
 
             current_structure: None,
 
@@ -281,6 +290,8 @@ impl TypeChecker {
                         ty: Type::Custom("time".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -295,6 +306,8 @@ impl TypeChecker {
                         ty: Type::Custom("time".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -313,6 +326,8 @@ impl TypeChecker {
                         ty: Type::Custom("Io".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -331,6 +346,8 @@ impl TypeChecker {
                         ty: Type::Custom("Fs".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -345,6 +362,8 @@ impl TypeChecker {
                         ty: Type::Custom("Fs.Dir".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -363,6 +382,8 @@ impl TypeChecker {
                         ty: Type::Custom("Math".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -377,6 +398,8 @@ impl TypeChecker {
                         ty: Type::Custom("Math".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -395,6 +418,8 @@ impl TypeChecker {
                         ty: Type::Custom("Env".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -409,6 +434,8 @@ impl TypeChecker {
                         ty: Type::Custom("Env".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -427,6 +454,8 @@ impl TypeChecker {
                         ty: Type::Custom("cli".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -487,6 +516,8 @@ impl TypeChecker {
                         ty: Type::Custom("console".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -501,6 +532,8 @@ impl TypeChecker {
                         ty: Type::Custom("console".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -519,6 +552,8 @@ impl TypeChecker {
                         ty: Type::Custom("random".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -533,6 +568,8 @@ impl TypeChecker {
                         ty: Type::Custom("random".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -551,6 +588,8 @@ impl TypeChecker {
                         ty: Type::Custom("http".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -565,6 +604,8 @@ impl TypeChecker {
                         ty: Type::Custom("http".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -583,6 +624,8 @@ impl TypeChecker {
                         ty: Type::Custom("json".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -597,6 +640,8 @@ impl TypeChecker {
                         ty: Type::Custom("json".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -615,6 +660,8 @@ impl TypeChecker {
                         ty: Type::Custom("webview".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -629,6 +676,8 @@ impl TypeChecker {
                         ty: Type::Custom("webview".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -647,6 +696,8 @@ impl TypeChecker {
                         ty: Type::Custom("mem".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -661,6 +712,8 @@ impl TypeChecker {
                         ty: Type::Custom("mem".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -675,6 +728,8 @@ impl TypeChecker {
                         ty: Type::Custom("Mem.ArenaSector".to_string()),
 
                         is_const: true,
+                        visibility: Visibility::Public,
+                        defined_in: None,
 
                     },
 
@@ -700,24 +755,53 @@ impl TypeChecker {
 
     pub fn check_typechecked_only(&mut self, program: &Program) -> Result<(), AlphaError> {
         // Fast path for #typechecked: register local declarations without downloading remote imports
+        for stmt in &program.statements {
+            if let Statement::Var(decl) = stmt {
+                if decl.ty == Type::Type {
+                    if let Expr::TypeLiteral(target_type, _) = &decl.init {
+                        self.type_aliases.insert(
+                            decl.name.clone(),
+                            TypeAliasInfo {
+                                target: target_type.clone(),
+                                visibility: decl.visibility,
+                                defined_in: self.current_file.clone(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
         for st in &program.structures {
-            self.structures.insert(st.name.clone(), st.clone());
+            let mut st_clone = st.clone();
+            if st_clone.defined_in.is_none() {
+                st_clone.defined_in = self.current_file.clone();
+            }
+            self.structures.insert(st.name.clone(), st_clone.clone());
             self.scopes[0].symbols.insert(
                 st.name.clone(),
                 SymbolInfo {
                     ty: Type::Custom(st.name.clone()),
                     is_const: true,
+                    visibility: st.visibility,
+                    defined_in: st_clone.defined_in.clone(),
                 },
             );
         }
 
         for en in &program.enums {
-            self.enums.insert(en.name.clone(), en.clone());
+            let mut en_clone = en.clone();
+            if en_clone.defined_in.is_none() {
+                en_clone.defined_in = self.current_file.clone();
+            }
+            self.enums.insert(en.name.clone(), en_clone.clone());
             self.scopes[0].symbols.insert(
                 en.name.clone(),
                 SymbolInfo {
                     ty: Type::Custom(en.name.clone()),
                     is_const: true,
+                    visibility: en.visibility,
+                    defined_in: en_clone.defined_in.clone(),
                 },
             );
         }
@@ -830,66 +914,68 @@ impl TypeChecker {
 
         // 1. Second pass: register all structures, enums, modules
 
-        for st in &program.structures {
-
-            self.structures.insert(st.name.clone(), st.clone());
-
-            self.scopes[0].symbols.insert(
-
-                st.name.clone(),
-
-                SymbolInfo {
-
-                    ty: Type::Custom(st.name.clone()),
-
-                    is_const: true,
-
-                },
-
-            );
-
+        // Pre-pass: register type aliases
+        for stmt in &program.statements {
+            if let Statement::Var(decl) = stmt {
+                if decl.ty == Type::Type {
+                    if let Expr::TypeLiteral(target_type, _) = &decl.init {
+                        self.type_aliases.insert(
+                            decl.name.clone(),
+                            TypeAliasInfo {
+                                target: target_type.clone(),
+                                visibility: decl.visibility,
+                                defined_in: self.current_file.clone(),
+                            },
+                        );
+                    }
+                }
+            }
         }
 
-
+        for st in &program.structures {
+            let mut st_clone = st.clone();
+            if st_clone.defined_in.is_none() {
+                st_clone.defined_in = self.current_file.clone();
+            }
+            self.structures.insert(st.name.clone(), st_clone.clone());
+            self.scopes[0].symbols.insert(
+                st.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(st.name.clone()),
+                    is_const: true,
+                    visibility: st.visibility,
+                    defined_in: st_clone.defined_in.clone(),
+                },
+            );
+        }
 
         for en in &program.enums {
-
-            self.enums.insert(en.name.clone(), en.clone());
-
+            let mut en_clone = en.clone();
+            if en_clone.defined_in.is_none() {
+                en_clone.defined_in = self.current_file.clone();
+            }
+            self.enums.insert(en.name.clone(), en_clone.clone());
             self.scopes[0].symbols.insert(
-
                 en.name.clone(),
-
                 SymbolInfo {
-
                     ty: Type::Custom(en.name.clone()),
-
                     is_const: true,
-
+                    visibility: en.visibility,
+                    defined_in: en_clone.defined_in.clone(),
                 },
-
             );
-
         }
 
-
-
         for m in &program.modules {
-
             self.modules.insert(m.name.clone(), m.clone());
-
             self.scopes[0].symbols.insert(
-
                 m.name.clone(),
-
                 SymbolInfo {
-
                     ty: Type::Custom(m.name.clone()),
-
                     is_const: true,
-
+                    visibility: Visibility::Public,
+                    defined_in: self.current_file.clone(),
                 },
-
             );
 
             for func in &m.functions {
@@ -927,57 +1013,45 @@ impl TypeChecker {
         for stmt in &program.statements {
 
             if let Statement::Structure(st) = stmt {
-
-                self.structures.insert(st.name.clone(), st.clone());
-
+                let mut st_clone = st.clone();
+                if st_clone.defined_in.is_none() {
+                    st_clone.defined_in = self.current_file.clone();
+                }
+                self.structures.insert(st.name.clone(), st_clone.clone());
                 self.scopes[0].symbols.insert(
-
                     st.name.clone(),
-
                     SymbolInfo {
-
                         ty: Type::Custom(st.name.clone()),
-
                         is_const: true,
-
+                        visibility: st.visibility,
+                        defined_in: st_clone.defined_in.clone(),
                     },
-
                 );
-
             } else if let Statement::Enum(en) = stmt {
-
-                self.enums.insert(en.name.clone(), en.clone());
-
+                let mut en_clone = en.clone();
+                if en_clone.defined_in.is_none() {
+                    en_clone.defined_in = self.current_file.clone();
+                }
+                self.enums.insert(en.name.clone(), en_clone.clone());
                 self.scopes[0].symbols.insert(
-
                     en.name.clone(),
-
                     SymbolInfo {
-
                         ty: Type::Custom(en.name.clone()),
-
                         is_const: true,
-
+                        visibility: en.visibility,
+                        defined_in: en_clone.defined_in.clone(),
                     },
-
                 );
-
             } else if let Statement::Module(m) = stmt {
-
                 self.modules.insert(m.name.clone(), m.clone());
-
                 self.scopes[0].symbols.insert(
-
                     m.name.clone(),
-
                     SymbolInfo {
-
                         ty: Type::Custom(m.name.clone()),
-
                         is_const: true,
-
+                        visibility: Visibility::Public,
+                        defined_in: self.current_file.clone(),
                     },
-
                 );
 
                 for func in &m.functions {
@@ -1079,24 +1153,28 @@ impl TypeChecker {
         // 4. Fifth pass: check function bodies
         for func in &program.functions {
             self.enter_scope();
-            self.current_return_type = Some(func.return_type.clone());
+            self.validate_type_visibility(&func.return_type, func.span)?;
+            let resolved_ret = self.resolve_type(&func.return_type);
+            self.current_return_type = Some(resolved_ret.clone());
 
             let is_strict = self.is_strict_at(func.span.line);
-            if (is_strict || func.is_typechecked) && (func.return_type == Type::Something || (func.return_type != Type::Nothing && self.contains_forbidden_strict_type(&func.return_type))) {
+            if (is_strict || func.is_typechecked) && (resolved_ret == Type::Something || (resolved_ret != Type::Nothing && self.contains_forbidden_strict_type(&resolved_ret))) {
                 return Err(AlphaError::type_error(
-                    format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, func.return_type),
+                    format!("[Strict Mode] Function '{}' cannot return forbidden type '{}'", func.name, resolved_ret),
                     func.span,
                 ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
             }
 
             for param in &func.params {
-                if (is_strict || func.is_typechecked) && self.contains_forbidden_strict_type(&param.ty) {
+                self.validate_type_visibility(&param.ty, param.span)?;
+                let resolved_param_ty = self.resolve_type(&param.ty);
+                if (is_strict || func.is_typechecked) && self.contains_forbidden_strict_type(&resolved_param_ty) {
                     return Err(AlphaError::type_error(
-                        format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, param.ty),
+                        format!("[Strict Mode] Parameter '{}' cannot use forbidden type '{}'", param.name, resolved_param_ty),
                         param.span,
                     ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
                 }
-                self.declare_variable(&param.name, param.ty.clone(), false, param.span)?;
+                self.declare_variable(&param.name, resolved_param_ty, false, param.span)?;
             }
 
             if func.is_typechecked {
@@ -1618,32 +1696,55 @@ impl TypeChecker {
 
 
 
-        for sub_import in &program.imports {
-
-            self.check_import(sub_import)?;
-
+        for stmt in &program.statements {
+            if let Statement::Var(decl) = stmt {
+                if decl.ty == Type::Type {
+                    if let Expr::TypeLiteral(target_type, _) = &decl.init {
+                        self.type_aliases.insert(
+                            decl.name.clone(),
+                            TypeAliasInfo {
+                                target: target_type.clone(),
+                                visibility: decl.visibility,
+                                defined_in: Some(path_key.clone()),
+                            },
+                        );
+                    }
+                }
+            }
         }
 
-
+        for sub_import in &program.imports {
+            self.check_import(sub_import)?;
+        }
 
         for st in &program.structures {
-
-            self.structures.insert(st.name.clone(), st.clone());
-
+            let mut st_clone = st.clone();
+            st_clone.defined_in = Some(path_key.clone());
+            self.structures.insert(st.name.clone(), st_clone.clone());
             self.scopes[0].symbols.insert(
-
                 st.name.clone(),
-
                 SymbolInfo {
-
                     ty: Type::Custom(st.name.clone()),
-
                     is_const: true,
-
+                    visibility: st.visibility,
+                    defined_in: Some(path_key.clone()),
                 },
-
             );
+        }
 
+        for en in &program.enums {
+            let mut en_clone = en.clone();
+            en_clone.defined_in = Some(path_key.clone());
+            self.enums.insert(en.name.clone(), en_clone.clone());
+            self.scopes[0].symbols.insert(
+                en.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(en.name.clone()),
+                    is_const: true,
+                    visibility: en.visibility,
+                    defined_in: Some(path_key.clone()),
+                },
+            );
         }
 
 
@@ -1762,66 +1863,68 @@ impl TypeChecker {
 
 
 
-        for st in &program.structures {
-
-            self.structures.insert(st.name.clone(), st.clone());
-
-            self.scopes[0].symbols.insert(
-
-                st.name.clone(),
-
-                SymbolInfo {
-
-                    ty: Type::Custom(st.name.clone()),
-
-                    is_const: true,
-
-                },
-
-            );
-
+        // Pre-pass: register type aliases
+        for stmt in &program.statements {
+            if let Statement::Var(decl) = stmt {
+                if decl.ty == Type::Type {
+                    if let Expr::TypeLiteral(target_type, _) = &decl.init {
+                        self.type_aliases.insert(
+                            decl.name.clone(),
+                            TypeAliasInfo {
+                                target: target_type.clone(),
+                                visibility: decl.visibility,
+                                defined_in: self.current_file.clone(),
+                            },
+                        );
+                    }
+                }
+            }
         }
 
-
+        for st in &program.structures {
+            let mut st_clone = st.clone();
+            if st_clone.defined_in.is_none() {
+                st_clone.defined_in = self.current_file.clone();
+            }
+            self.structures.insert(st.name.clone(), st_clone.clone());
+            self.scopes[0].symbols.insert(
+                st.name.clone(),
+                SymbolInfo {
+                    ty: Type::Custom(st.name.clone()),
+                    is_const: true,
+                    visibility: st.visibility,
+                    defined_in: st_clone.defined_in.clone(),
+                },
+            );
+        }
 
         for en in &program.enums {
-
-            self.enums.insert(en.name.clone(), en.clone());
-
+            let mut en_clone = en.clone();
+            if en_clone.defined_in.is_none() {
+                en_clone.defined_in = self.current_file.clone();
+            }
+            self.enums.insert(en.name.clone(), en_clone.clone());
             self.scopes[0].symbols.insert(
-
                 en.name.clone(),
-
                 SymbolInfo {
-
                     ty: Type::Custom(en.name.clone()),
-
                     is_const: true,
-
+                    visibility: en.visibility,
+                    defined_in: en_clone.defined_in.clone(),
                 },
-
             );
-
         }
 
-
-
         for m in &program.modules {
-
             self.modules.insert(m.name.clone(), m.clone());
-
             self.scopes[0].symbols.insert(
-
                 m.name.clone(),
-
                 SymbolInfo {
-
                     ty: Type::Custom(m.name.clone()),
-
                     is_const: true,
-
+                    visibility: Visibility::Public,
+                    defined_in: self.current_file.clone(),
                 },
-
             );
 
             for func in &m.functions {
@@ -1892,46 +1995,103 @@ impl TypeChecker {
 
 
 
+    pub fn resolve_type(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Custom(name) => {
+                if let Some(alias) = self.type_aliases.get(name) {
+                    self.resolve_type(&alias.target)
+                } else {
+                    ty.clone()
+                }
+            }
+            Type::Vect(inner) => Type::Vect(Box::new(self.resolve_type(inner))),
+            Type::Map(k, v) => Type::Map(Box::new(self.resolve_type(k)), Box::new(self.resolve_type(v))),
+            Type::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_type(t)).collect()),
+            Type::Union(types) => Type::Union(types.iter().map(|t| self.resolve_type(t)).collect()),
+            other => other.clone(),
+        }
+    }
+
+    pub fn validate_type_visibility(&self, ty: &Type, span: Span) -> Result<(), AlphaError> {
+        match ty {
+            Type::Custom(name) => {
+                if let Some(alias) = self.type_aliases.get(name) {
+                    if alias.visibility == Visibility::Here && alias.defined_in.is_some() && alias.defined_in != self.current_file {
+                        return Err(AlphaError::type_error(
+                            format!("Type '{}' is private ('here') to '{}'", name, alias.defined_in.as_ref().unwrap()),
+                            span,
+                        ).with_hint(format!("Mark type '{}' as 'public var {}: type = ...' to use it from other files", name, name)));
+                    }
+                    self.validate_type_visibility(&alias.target, span)?;
+                } else if let Some(st) = self.structures.get(name) {
+                    if st.visibility == Visibility::Here && st.defined_in.is_some() && st.defined_in != self.current_file {
+                        return Err(AlphaError::type_error(
+                            format!("Structure '{}' is private ('here') to '{}'", name, st.defined_in.as_ref().unwrap()),
+                            span,
+                        ).with_hint(format!("Mark structure '{}' as 'public structure' to use it from other files", name)));
+                    }
+                } else if let Some(en) = self.enums.get(name) {
+                    if en.visibility == Visibility::Here && en.defined_in.is_some() && en.defined_in != self.current_file {
+                        return Err(AlphaError::type_error(
+                            format!("Enum '{}' is private ('here') to '{}'", name, en.defined_in.as_ref().unwrap()),
+                            span,
+                        ).with_hint(format!("Mark enum '{}' as 'public enum' to use it from other files", name)));
+                    }
+                }
+                Ok(())
+            }
+            Type::Vect(inner) => self.validate_type_visibility(inner, span),
+            Type::Map(k, v) => {
+                self.validate_type_visibility(k, span)?;
+                self.validate_type_visibility(v, span)
+            }
+            Type::Tuple(types) | Type::Union(types) => {
+                for t in types {
+                    self.validate_type_visibility(t, span)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn declare_variable(
-
         &mut self,
-
         name: &str,
-
         ty: Type,
-
         is_const: bool,
-
         span: Span,
-
     ) -> Result<(), AlphaError> {
+        self.declare_variable_with_visibility(name, ty, is_const, Visibility::Public, span)
+    }
 
+    fn declare_variable_with_visibility(
+        &mut self,
+        name: &str,
+        ty: Type,
+        is_const: bool,
+        visibility: Visibility,
+        span: Span,
+    ) -> Result<(), AlphaError> {
         let current_scope = self.scopes.last_mut().expect("At least one scope");
-
         if current_scope.symbols.contains_key(name) {
-
             return Err(AlphaError::type_error(
-
                 format!("Variable '{}' already declared in this scope", name),
-
                 span,
-
             ));
-
         }
 
-
-
+        let defined_in = self.current_file.clone();
         current_scope.symbols.insert(
-
             name.to_string(),
-
-            SymbolInfo { ty, is_const },
-
+            SymbolInfo {
+                ty,
+                is_const,
+                visibility,
+                defined_in,
+            },
         );
-
         Ok(())
-
     }
 
 
@@ -2235,6 +2395,7 @@ impl TypeChecker {
                 self.check_typechecked_expr(else_expr)?;
                 Ok(())
             }
+            Expr::TypeLiteral(_, _) => Ok(()),
             Expr::Tuple(items, _) => {
                 for it in items {
                     self.check_typechecked_expr(it)?;
@@ -2305,93 +2466,69 @@ impl TypeChecker {
 
 
             Statement::Var(decl) => {
+                if decl.ty == Type::Type {
+                    if let Expr::TypeLiteral(target_type, _) = &decl.init {
+                        self.validate_type_visibility(target_type, decl.span)?;
+                        self.type_aliases.insert(
+                            decl.name.clone(),
+                            TypeAliasInfo {
+                                target: target_type.clone(),
+                                visibility: decl.visibility,
+                                defined_in: self.current_file.clone(),
+                            },
+                        );
+                    }
+                    self.declare_variable_with_visibility(&decl.name, Type::Type, decl.is_const, decl.visibility, decl.span)?;
+                    return Ok(());
+                }
+
+                self.validate_type_visibility(&decl.ty, decl.span)?;
+                let resolved_decl_ty = self.resolve_type(&decl.ty);
 
                 if self.is_strict_at(decl.span.line) {
-
                     if !decl.has_explicit_type {
-
                         return Err(AlphaError::type_error(
-
                             format!("[Strict Mode] Variable '{}' must have an explicit type annotation", decl.name),
-
                             decl.span,
-
                         ).with_hint(format!("Specify an explicit type, e.g. 'var {}: <type> = ...'", decl.name)));
-
                     }
-
                     if self.contains_forbidden_strict_type(&decl.ty) {
-
                         return Err(AlphaError::type_error(
-
                             format!("[Strict Mode] Variable '{}' cannot use forbidden type '{}'", decl.name, decl.ty),
-
                             decl.span,
-
                         ).with_hint("Strict mode forbids 'something' and 'nothing' types"));
-
                     }
-
                 }
-
-
 
                 let init_ty = self.check_expr(&decl.init)?;
-
                 if self.is_strict_at(decl.span.line) && self.contains_forbidden_strict_type(&init_ty) {
-
                     return Err(AlphaError::type_error(
-
                         format!("[Strict Mode] Initializer for variable '{}' has forbidden type '{}'", decl.name, init_ty),
-
                         decl.span,
-
                     ).with_hint("Strict mode forbids expressions evaluating to 'something' or 'nothing'"));
-
                 }
 
-                let final_ty = if matches!(decl.init, Expr::VectNew(_)) && matches!(decl.ty, Type::Vect(_)) {
-
-                    decl.ty.clone()
-
-                } else if matches!(decl.init, Expr::MapNew(_)) && matches!(decl.ty, Type::Map(_, _)) {
-
-                    decl.ty.clone()
-
+                let final_ty = if matches!(decl.init, Expr::VectNew(_)) && matches!(resolved_decl_ty, Type::Vect(_)) {
+                    resolved_decl_ty.clone()
+                } else if matches!(decl.init, Expr::MapNew(_)) && matches!(resolved_decl_ty, Type::Map(_, _)) {
+                    resolved_decl_ty.clone()
                 } else {
-
-                    init_ty
-
+                    self.resolve_type(&init_ty)
                 };
 
-
-
-                if !final_ty.is_assignable_to(&decl.ty) {
-
+                if !final_ty.is_assignable_to(&resolved_decl_ty) {
                     return Err(AlphaError::type_error(
-
                         format!(
-
                             "Cannot initialize variable '{}' of type '{}' with value of type '{}'",
-
                             decl.name, decl.ty, final_ty
-
                         ),
-
                         decl.span,
-
                     )
-
                     .with_hint(format!("Make sure the value matches the declared type '{}'", decl.ty)));
-
                 }
 
-
-
-                self.declare_variable(&decl.name, decl.ty.clone(), decl.is_const, decl.span)?;
-
+                self.declare_variable_with_visibility(&decl.name, resolved_decl_ty, decl.is_const, decl.visibility, decl.span)?;
                 Ok(())
-
             }
 
 
@@ -3011,21 +3148,19 @@ impl TypeChecker {
 
 
             Statement::Structure(st) => {
-
-                self.structures.insert(st.name.clone(), st.clone());
-
+                let mut st_clone = st.clone();
+                if st_clone.defined_in.is_none() {
+                    st_clone.defined_in = self.current_file.clone();
+                }
+                self.structures.insert(st.name.clone(), st_clone.clone());
                 self.scopes.last_mut().unwrap().symbols.insert(
-
                     st.name.clone(),
-
                     SymbolInfo {
-
                         ty: Type::Custom(st.name.clone()),
-
                         is_const: true,
-
+                        visibility: st.visibility,
+                        defined_in: st_clone.defined_in.clone(),
                     },
-
                 );
 
                 self.current_structure = Some(st.name.clone());
@@ -3239,17 +3374,15 @@ impl TypeChecker {
 
 
             Statement::Enum(en) => {
-
-                self.enums.insert(en.name.clone(), en.clone());
-
-                if self.lookup_variable(&en.name).is_none() {
-
-                    self.declare_variable(&en.name, Type::Custom(en.name.clone()), true, en.span)?;
-
+                let mut en_clone = en.clone();
+                if en_clone.defined_in.is_none() {
+                    en_clone.defined_in = self.current_file.clone();
                 }
-
+                self.enums.insert(en.name.clone(), en_clone.clone());
+                if self.lookup_variable(&en.name).is_none() {
+                    self.declare_variable_with_visibility(&en.name, Type::Custom(en.name.clone()), true, en.visibility, en.span)?;
+                }
                 Ok(())
-
             }
 
 
@@ -3357,11 +3490,14 @@ impl TypeChecker {
 
 
             Expr::Variable(name, span) => {
-
                 if let Some(info) = self.lookup_variable(name) {
-
+                    if info.visibility == Visibility::Here && info.defined_in.is_some() && info.defined_in != self.current_file {
+                        return Err(AlphaError::type_error(
+                            format!("Variable '{}' is private ('here') to '{}'", name, info.defined_in.as_ref().unwrap()),
+                            *span,
+                        ).with_hint(format!("Mark variable '{}' as 'public var' to use it from other files", name)));
+                    }
                     Ok(info.ty.clone())
-
                 } else if self.lookup_function(name).is_some() {
 
                     Ok(Type::Something)
@@ -3858,9 +3994,8 @@ impl TypeChecker {
 
 
 
-                let obj_ty = self.check_expr(object)?;
-
-
+                let expr_ty = self.check_expr(object)?;
+                let obj_ty = self.resolve_type(&expr_ty);
 
                 match &obj_ty {
 
@@ -4408,8 +4543,13 @@ impl TypeChecker {
                 let obj_ty = self.check_expr(object)?;
 
                 if let Type::Custom(name) = &obj_ty {
-
                     if let Some(en) = self.enums.get(name) {
+                        if en.visibility == Visibility::Here && en.defined_in.is_some() && en.defined_in != self.current_file {
+                            return Err(AlphaError::type_error(
+                                format!("Enum '{}' is private ('here') to '{}'", name, en.defined_in.as_ref().unwrap()),
+                                *span,
+                            ).with_hint(format!("Mark enum '{}' as 'public enum' to use it from other files", name)));
+                        }
 
                         if en.variants.contains(member) {
 
@@ -4430,6 +4570,12 @@ impl TypeChecker {
                     }
 
                     if let Some(st) = self.structures.get(name) {
+                        if st.visibility == Visibility::Here && st.defined_in.is_some() && st.defined_in != self.current_file {
+                            return Err(AlphaError::type_error(
+                                format!("Structure '{}' is private ('here') to '{}'", name, st.defined_in.as_ref().unwrap()),
+                                *span,
+                            ).with_hint(format!("Mark structure '{}' as 'public structure' to use it from other files", name)));
+                        }
 
                         if let Some((_, f_ty)) = st.fields.iter().find(|(n, _)| n == member) {
 
@@ -4754,6 +4900,12 @@ impl TypeChecker {
 
 
                 if let Some(st) = self.structures.get(&struct_name).cloned() {
+                    if st.visibility == Visibility::Here && st.defined_in.is_some() && st.defined_in != self.current_file {
+                        return Err(AlphaError::type_error(
+                            format!("Structure '{}' is private ('here') to '{}'", struct_name, st.defined_in.as_ref().unwrap()),
+                            *span,
+                        ).with_hint(format!("Mark structure '{}' as 'public structure' to use it from other files", struct_name)));
+                    }
 
                     for (f_name, f_expr) in fields {
 
@@ -4812,6 +4964,11 @@ impl TypeChecker {
             }
 
 
+
+            Expr::TypeLiteral(ty, span) => {
+                self.validate_type_visibility(ty, *span)?;
+                Ok(Type::Type)
+            }
 
             Expr::Block(block) => {
 

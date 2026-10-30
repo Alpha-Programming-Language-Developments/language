@@ -20,6 +20,7 @@ pub enum Type {
     Tuple(Vec<Type>),
     Union(Vec<Type>),
     Custom(String), // e.g. "Io.File", "Fs.Dir"
+    Type,           // Meta-type `type` for type alias variables: `var mytype: type = ...`
 }
 
 impl Type {
@@ -133,6 +134,7 @@ impl fmt::Display for Type {
                 write!(f, "<{}>", s.join(", "))
             }
             Type::Custom(name) => write!(f, "{}", name),
+            Type::Type => write!(f, "type"),
         }
     }
 }

@@ -46,6 +46,8 @@ pub struct StructureDecl {
     pub name: String,
     pub fields: Vec<(String, Type)>,
     pub methods: Vec<AttachedMethod>,
+    pub visibility: Visibility,
+    pub defined_in: Option<String>,
     pub span: Span,
 }
 
@@ -53,6 +55,8 @@ pub struct StructureDecl {
 pub struct EnumDecl {
     pub name: String,
     pub variants: Vec<String>,
+    pub visibility: Visibility,
+    pub defined_in: Option<String>,
     pub span: Span,
 }
 
@@ -85,6 +89,8 @@ pub struct VarDecl {
     pub ty: Type,
     pub init: Expr,
     pub has_explicit_type: bool,
+    pub visibility: Visibility,
+    pub defined_in: Option<String>,
     pub span: Span,
 }
 
@@ -223,6 +229,7 @@ pub enum Expr {
     MapNew(Span),
     Tuple(Vec<Expr>, Span),
     HexColor(String, Span),
+    TypeLiteral(Type, Span),
     Block(Block),
     Slice {
         object: Box<Expr>,
@@ -257,6 +264,7 @@ impl Expr {
             Expr::MapNew(s) => *s,
             Expr::Tuple(_, s) => *s,
             Expr::HexColor(_, s) => *s,
+            Expr::TypeLiteral(_, s) => *s,
             Expr::Block(b) => b.span,
             Expr::Slice { span, .. } => *span,
         }

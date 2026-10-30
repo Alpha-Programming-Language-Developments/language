@@ -2320,3 +2320,241 @@ function main() [public, int] #typechecked {{
 
     let _ = fs::remove_file(&temp_file);
 }
+
+#[test]
+fn test_type_alias_and_type_meta_type() {
+    let source = r#"
+var mytype: type = vect<map<int, string>>
+var data: mytype = vect.new()
+var item: map<int, string> = map.new()
+item.insert(1, "Alpha")
+data.push(item)
+
+var first_item: map<int, string> = data[1]
+var text: string = first_item[1]
+"#;
+
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize().expect("Lexing failed");
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().expect("Parsing failed");
+
+    let mut typechecker = TypeChecker::new();
+    typechecker.check_program(&program).expect("Type checking failed");
+
+    let mut interp = Interpreter::new();
+    interp.execute_program(&program, None).expect("Execution failed");
+    assert_eq!(interp.env.get("text"), Some(Value::String("Alpha".to_string())));
+}
+
+#[test]
+fn test_visibility_public_vs_private_structure() {
+    let temp_dir = std::env::temp_dir().join(format!("alpha_vis_struct_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let helper_file = temp_dir.join("helper.alpha");
+    let main_file = temp_dir.join("main.alpha");
+
+    std::fs::write(&helper_file, r#"
+public structure ExportedModel {
+    id: int
+}
+
+structure InternalModel {
+    id: int
+}
+"#).unwrap();
+
+    // 1. Success case: using public structure
+    let valid_main = r#"
+import "helper.alpha"
+
+function main() [public, int] {
+    var m: ExportedModel = make ExportedModel { id: 42 }
+    return m.id
+}
+"#;
+    std::fs::write(&main_file, valid_main).unwrap();
+
+    let mut lexer = Lexer::new(valid_main);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().unwrap();
+
+    let mut typechecker = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    typechecker.check_program(&program).expect("Public structure should be accessible");
+
+    // 2. Failure case: using private structure
+    let invalid_main = r#"
+import "helper.alpha"
+
+function main() [public, int] {
+    var m: InternalModel = make InternalModel { id: 42 }
+    return m.id
+}
+"#;
+    let mut lexer_bad = Lexer::new(invalid_main);
+    let tokens_bad = lexer_bad.tokenize().unwrap();
+    let mut parser_bad = Parser::new(tokens_bad);
+    let program_bad = parser_bad.parse_program().unwrap();
+
+    let mut typechecker_bad = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    let err = typechecker_bad.check_program(&program_bad);
+    assert!(err.is_err(), "Private structure should not be accessible across files");
+    let err_msg = err.err().unwrap().message;
+    assert!(err_msg.contains("private ('here')"), "Error should mention private ('here'), got: {}", err_msg);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_visibility_public_vs_private_enum() {
+    let temp_dir = std::env::temp_dir().join(format!("alpha_vis_enum_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let helper_file = temp_dir.join("helper.alpha");
+    let main_file = temp_dir.join("main.alpha");
+
+    std::fs::write(&helper_file, r#"
+public enum PublicColor {
+    Red,
+    Green
+}
+
+enum PrivateColor {
+    Blue,
+    Yellow
+}
+"#).unwrap();
+
+    // 1. Success case: using public enum
+    let valid_main = r#"
+import "helper.alpha"
+
+function main() [public, PublicColor] {
+    return PublicColor.Red
+}
+"#;
+    std::fs::write(&main_file, valid_main).unwrap();
+
+    let mut lexer = Lexer::new(valid_main);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().unwrap();
+
+    let mut typechecker = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    typechecker.check_program(&program).expect("Public enum should be accessible");
+
+    // 2. Failure case: using private enum
+    let invalid_main = r#"
+import "helper.alpha"
+
+function main() [public, nothing] {
+    var c = PrivateColor.Blue
+}
+"#;
+    let mut lexer_bad = Lexer::new(invalid_main);
+    let tokens_bad = lexer_bad.tokenize().unwrap();
+    let mut parser_bad = Parser::new(tokens_bad);
+    let program_bad = parser_bad.parse_program().unwrap();
+
+    let mut typechecker_bad = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    let err = typechecker_bad.check_program(&program_bad);
+    assert!(err.is_err(), "Private enum should not be accessible across files");
+    let err_msg = err.err().unwrap().message;
+    assert!(err_msg.contains("private ('here')"), "Error should mention private ('here'), got: {}", err_msg);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_visibility_public_vs_private_var_and_type_alias() {
+    let temp_dir = std::env::temp_dir().join(format!("alpha_vis_var_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let helper_file = temp_dir.join("helper.alpha");
+    let main_file = temp_dir.join("main.alpha");
+
+    std::fs::write(&helper_file, r#"
+public var public_score: int = 100
+var private_score: int = 999
+
+public var PublicList: type = vect<int>
+var PrivateList: type = vect<string>
+"#).unwrap();
+
+    // 1. Success case: using public var and public type alias
+    let valid_main = r#"
+import "helper.alpha"
+
+function main() [public, int] {
+    var list: PublicList = vect.new()
+    list.push(public_score)
+    return list[1]
+}
+"#;
+    std::fs::write(&main_file, valid_main).unwrap();
+
+    let mut lexer = Lexer::new(valid_main);
+    let tokens = lexer.tokenize().unwrap();
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program().unwrap();
+
+    let mut typechecker = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    typechecker.check_program(&program).expect("Public var and type alias should be accessible");
+
+    // 2. Failure case: accessing private var
+    let invalid_var_main = r#"
+import "helper.alpha"
+
+function main() [public, int] {
+    return private_score
+}
+"#;
+    let mut lexer_var = Lexer::new(invalid_var_main);
+    let tokens_var = lexer_var.tokenize().unwrap();
+    let mut parser_var = Parser::new(tokens_var);
+    let program_var = parser_var.parse_program().unwrap();
+
+    let mut typechecker_var = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    let err_var = typechecker_var.check_program(&program_var);
+    assert!(err_var.is_err(), "Private var should not be accessible across files");
+    let msg_var = err_var.err().unwrap().message;
+    assert!(msg_var.contains("private ('here')"), "Error should mention private ('here'), got: {}", msg_var);
+
+    // 3. Failure case: accessing private type alias
+    let invalid_type_main = r#"
+import "helper.alpha"
+
+function main() [public, nothing] {
+    var l: PrivateList = vect.new()
+}
+"#;
+    let mut lexer_type = Lexer::new(invalid_type_main);
+    let tokens_type = lexer_type.tokenize().unwrap();
+    let mut parser_type = Parser::new(tokens_type);
+    let program_type = parser_type.parse_program().unwrap();
+
+    let mut typechecker_type = TypeChecker::new()
+        .with_working_dir(temp_dir.clone())
+        .with_file(main_file.to_string_lossy().to_string());
+    let err_type = typechecker_type.check_program(&program_type);
+    assert!(err_type.is_err(), "Private type alias should not be accessible across files");
+    let msg_type = err_type.err().unwrap().message;
+    assert!(msg_type.contains("private ('here')"), "Error should mention private ('here'), got: {}", msg_type);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+

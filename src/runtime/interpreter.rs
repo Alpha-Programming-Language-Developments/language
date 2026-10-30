@@ -1515,43 +1515,37 @@ impl Interpreter {
 
 
             Statement::Var(decl) => {
+                if decl.ty == Type::Type {
+                    return Ok(ControlSignal::None);
+                }
 
                 let mut val = self.eval_expr(&decl.init)?;
 
                 if decl.ty == Type::Unt {
-
                     match val {
-
                         Value::Int(i) => {
-
                             if i < 0 {
-
                                 return Err(AlphaError::runtime(
-
                                     format!("Cannot assign negative value {} to unsigned int 'unt'", i),
-
                                     decl.span,
-
                                 ));
-
                             }
-
                             val = Value::Unt(i as u64);
-
                         }
-
                         Value::Unt(_) => {}
-
                         _ => {}
-
                     }
-
                 }
 
-                self.env.define(decl.name.clone(), val, decl.is_const);
+                self.env.define_with_visibility(
+                    decl.name.clone(),
+                    val,
+                    decl.is_const,
+                    decl.visibility,
+                    self.current_file.clone(),
+                );
 
                 Ok(ControlSignal::None)
-
             }
 
 
@@ -1704,6 +1698,14 @@ impl Interpreter {
 
                         }
 
+                        if let Some(b) = self.env.get_binding(name) {
+                            if b.visibility == Visibility::Here && b.source_file.is_some() && b.source_file != self.current_file {
+                                return Err(AlphaError::runtime(
+                                    format!("Variable '{}' is private ('here') to '{}'", name, b.source_file.as_ref().unwrap()),
+                                    *span,
+                                ));
+                            }
+                        }
                         self.env.assign(name, final_val).map_err(|e| AlphaError::runtime(e, *span))?;
 
                     }
@@ -2676,11 +2678,14 @@ impl Interpreter {
 
 
             Expr::Variable(name, span) => {
-
-                if let Some(val) = self.env.get(name) {
-
-                    val.deref_arena(*span)
-
+                if let Some(b) = self.env.get_binding(name) {
+                    if b.visibility == Visibility::Here && b.source_file.is_some() && b.source_file != self.current_file {
+                        return Err(AlphaError::runtime(
+                            format!("Variable '{}' is private ('here') to '{}'", name, b.source_file.as_ref().unwrap()),
+                            *span,
+                        ));
+                    }
+                    b.value.clone().deref_arena(*span)
                 } else if let Some(sf) = self.lookup_function(name) {
 
                     Ok(Value::Function(sf.decl.clone()))
@@ -4447,11 +4452,14 @@ impl Interpreter {
 
 
             Expr::MemberAccess { object, member, span } => {
-
                 if let Expr::Variable(name, _) = &**object {
-
                     if let Some(en) = self.enums.get(name) {
-
+                        if en.visibility == Visibility::Here && en.defined_in.is_some() && en.defined_in != self.current_file {
+                            return Err(AlphaError::runtime(
+                                format!("Enum '{}' is private ('here') to '{}'", name, en.defined_in.as_ref().unwrap()),
+                                *span,
+                            ));
+                        }
                         if let Some(ordinal) = en.variants.iter().position(|v| v == member) {
 
                             return Ok(Value::EnumVariant {
@@ -5081,24 +5089,24 @@ impl Interpreter {
             } => {
 
                 let struct_name = if let Some(name) = structure_name {
-
                     name.clone()
-
                 } else if let Some(curr) = &self.current_structure {
-
                     curr.clone()
-
                 } else {
-
                     return Err(AlphaError::runtime(
-
                         "Cannot use 'make this' outside of a structure method",
-
                         *span,
-
                     ));
-
                 };
+
+                if let Some(st) = self.structures.get(&struct_name) {
+                    if st.visibility == Visibility::Here && st.defined_in.is_some() && st.defined_in != self.current_file {
+                        return Err(AlphaError::runtime(
+                            format!("Structure '{}' is private ('here') to '{}'", struct_name, st.defined_in.as_ref().unwrap()),
+                            *span,
+                        ));
+                    }
+                }
 
 
 
@@ -5163,11 +5171,9 @@ impl Interpreter {
 
 
             Expr::VectNew(_) => Ok(Value::Vect(Rc::new(RefCell::new(Vec::new())))),
-
             Expr::MapNew(_) => Ok(Value::Map(Rc::new(RefCell::new(HashMap::new())))),
-
             Expr::HexColor(h, _) => Ok(Value::HexColor(h.clone())),
-
+            Expr::TypeLiteral(_, _) => Ok(Value::Nothing),
             Expr::Block(b) => Ok(Value::Block(b.clone())),
 
 

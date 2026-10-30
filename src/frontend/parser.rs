@@ -29,13 +29,13 @@ impl Parser {
         while !self.is_at_end() {
             if self.check(&TokenKind::Import) {
                 imports.push(self.parse_import()?);
-            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
+            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) || (self.check(&TokenKind::Public) && (self.check_next(&TokenKind::Function) || self.check_next(&TokenKind::HashTest))) {
                 functions.push(self.parse_function()?);
-            } else if self.check(&TokenKind::Structure) {
+            } else if self.check(&TokenKind::Structure) || (self.check(&TokenKind::Public) && self.check_next(&TokenKind::Structure)) {
                 let st = self.parse_structure()?;
                 structures.push(st.clone());
                 statements.push(Statement::Structure(st));
-            } else if self.check(&TokenKind::Enum) {
+            } else if self.check(&TokenKind::Enum) || (self.check(&TokenKind::Public) && self.check_next(&TokenKind::Enum)) {
                 let en = self.parse_enum()?;
                 enums.push(en.clone());
                 statements.push(Statement::Enum(en));
@@ -102,12 +102,12 @@ impl Parser {
                 if is_active {
                     imports.push(imp);
                 }
-            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
+            } else if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) || (self.check(&TokenKind::Public) && (self.check_next(&TokenKind::Function) || self.check_next(&TokenKind::HashTest))) {
                 let func = self.parse_function()?;
                 if is_active {
                     functions.push(func);
                 }
-            } else if self.check(&TokenKind::Structure) {
+            } else if self.check(&TokenKind::Structure) || (self.check(&TokenKind::Public) && self.check_next(&TokenKind::Structure)) {
                 let st = self.parse_structure()?;
                 if is_active {
                     structures.push(st.clone());
@@ -235,7 +235,7 @@ impl Parser {
     // -------------------------------------------------------------
     // Variable Declarations
     // -------------------------------------------------------------
-    fn parse_var_decl(&mut self, is_const: bool, start_span: Span) -> Result<VarDecl, AlphaError> {
+    fn parse_var_decl(&mut self, is_const: bool, visibility: Visibility, start_span: Span) -> Result<VarDecl, AlphaError> {
         let name_tok = self.expect_ident()?;
         let (ty, has_explicit_type) = if self.match_token(&TokenKind::Colon) {
             (self.parse_type()?, true)
@@ -244,7 +244,14 @@ impl Parser {
         };
 
         self.expect(&TokenKind::Equal)?;
-        let init = self.parse_expr()?;
+        let init = if ty == Type::Type {
+            let type_start = self.peek().span;
+            let target_ty = self.parse_type()?;
+            let type_end = self.previous().span;
+            Expr::TypeLiteral(target_ty, type_start.merge(type_end))
+        } else {
+            self.parse_expr()?
+        };
         let end_span = init.span();
 
         Ok(VarDecl {
@@ -253,6 +260,8 @@ impl Parser {
             ty,
             init,
             has_explicit_type,
+            visibility,
+            defined_in: None,
             span: start_span.merge(end_span),
         })
     }
@@ -304,11 +313,17 @@ impl Parser {
     // Function Declarations
     // -------------------------------------------------------------
     fn parse_function(&mut self) -> Result<FunctionDecl, AlphaError> {
+        let is_public_prefix = self.match_token(&TokenKind::Public);
         let is_test_prefix = self.match_token(&TokenKind::HashTest);
-        let start_span = if is_test_prefix && !self.check(&TokenKind::Function) {
+        let start_span = if (is_public_prefix || is_test_prefix) && !self.check(&TokenKind::Function) {
             self.previous().span
         } else {
-            self.expect(&TokenKind::Function)?.span
+            let s = self.expect(&TokenKind::Function)?.span;
+            if is_public_prefix {
+                self.previous().span.merge(s)
+            } else {
+                s
+            }
         };
 
         let name = self.expect_ident()?.text;
@@ -335,7 +350,7 @@ impl Parser {
         self.expect(&TokenKind::RParen)?;
 
         // Metadata brackets: [visibility, return_type] or [visibility] or [return_type]
-        let mut visibility = Visibility::Here;
+        let mut visibility = if is_public_prefix { Visibility::Public } else { Visibility::Here };
         let mut return_type = Type::Nothing;
         let mut is_typechecked = self.match_token(&TokenKind::HashTypechecked);
         let mut is_test = is_test_prefix || self.match_token(&TokenKind::HashTest);
@@ -384,7 +399,14 @@ impl Parser {
     // Structures
     // -------------------------------------------------------------
     fn parse_structure(&mut self) -> Result<StructureDecl, AlphaError> {
-        let start_span = self.expect(&TokenKind::Structure)?.span;
+        let is_public = self.match_token(&TokenKind::Public);
+        let visibility = if is_public { Visibility::Public } else { Visibility::Here };
+        let pub_span = if is_public { Some(self.previous().span) } else { None };
+        let struct_span = self.expect(&TokenKind::Structure)?.span;
+        let start_span = match pub_span {
+            Some(ps) => ps.merge(struct_span),
+            None => struct_span,
+        };
         let name_tok = self.expect_ident()?;
         let name = name_tok.text;
 
@@ -420,6 +442,8 @@ impl Parser {
             name,
             fields,
             methods,
+            visibility,
+            defined_in: None,
             span: start_span.merge(end_span),
         })
     }
@@ -496,7 +520,14 @@ impl Parser {
     }
 
     fn parse_enum(&mut self) -> Result<EnumDecl, AlphaError> {
-        let start_span = self.expect(&TokenKind::Enum)?.span;
+        let is_public = self.match_token(&TokenKind::Public);
+        let visibility = if is_public { Visibility::Public } else { Visibility::Here };
+        let pub_span = if is_public { Some(self.previous().span) } else { None };
+        let enum_span = self.expect(&TokenKind::Enum)?.span;
+        let start_span = match pub_span {
+            Some(ps) => ps.merge(enum_span),
+            None => enum_span,
+        };
         let name = self.expect_ident()?.text;
         self.expect(&TokenKind::LBrace)?;
         let mut variants = Vec::new();
@@ -511,6 +542,8 @@ impl Parser {
         Ok(EnumDecl {
             name,
             variants,
+            visibility,
+            defined_in: None,
             span: start_span.merge(end_span),
         })
     }
@@ -525,16 +558,30 @@ impl Parser {
         let mut variables = Vec::new();
         self.skip_semicolons();
         while !self.check(&TokenKind::RBrace) && !self.is_at_end() {
+            let is_public = self.match_token(&TokenKind::Public);
+            let visibility = if is_public { Visibility::Public } else { Visibility::Here };
             if self.check(&TokenKind::Function) || self.check(&TokenKind::HashTest) {
-                functions.push(self.parse_function()?);
+                let mut func = self.parse_function()?;
+                if is_public {
+                    func.visibility = Visibility::Public;
+                }
+                functions.push(func);
             } else if self.check(&TokenKind::Structure) {
-                structures.push(self.parse_structure()?);
+                let mut st = self.parse_structure()?;
+                if is_public {
+                    st.visibility = Visibility::Public;
+                }
+                structures.push(st);
             } else if self.check(&TokenKind::Enum) {
-                enums.push(self.parse_enum()?);
+                let mut en = self.parse_enum()?;
+                if is_public {
+                    en.visibility = Visibility::Public;
+                }
+                enums.push(en);
             } else if self.check(&TokenKind::Var) || (self.check(&TokenKind::Const) && self.check_next(&TokenKind::Var)) {
                 let is_const = self.match_token(&TokenKind::Const);
                 let var_span = self.expect(&TokenKind::Var)?.span;
-                variables.push(self.parse_var_decl(is_const, var_span)?);
+                variables.push(self.parse_var_decl(is_const, visibility, var_span)?);
             } else {
                 return Err(AlphaError::parse(
                     format!("Unexpected token in module '{}': '{}'", name, self.peek().text),
@@ -598,6 +645,7 @@ impl Parser {
             TokenKind::TypeSomething => Ok(Type::Something),
             TokenKind::TypeEverything => Ok(Type::Everything),
             TokenKind::TypeNothing | TokenKind::Nothing => Ok(Type::Nothing),
+            TokenKind::TypeType => Ok(Type::Type),
             TokenKind::TypeVect => {
                 self.expect(&TokenKind::Less)?;
                 let inner = self.parse_type()?;
@@ -680,13 +728,22 @@ impl Parser {
             return Ok(Statement::StrictDirective(self.previous().span));
         }
 
+        let is_public = self.match_token(&TokenKind::Public);
+        let visibility = if is_public { Visibility::Public } else { Visibility::Here };
+
         if self.check(&TokenKind::Structure) {
-            let st = self.parse_structure()?;
+            let mut st = self.parse_structure()?;
+            if is_public {
+                st.visibility = Visibility::Public;
+            }
             return Ok(Statement::Structure(st));
         }
 
         if self.check(&TokenKind::Enum) {
-            let en = self.parse_enum()?;
+            let mut en = self.parse_enum()?;
+            if is_public {
+                en.visibility = Visibility::Public;
+            }
             return Ok(Statement::Enum(en));
         }
 
@@ -705,8 +762,15 @@ impl Parser {
             if self.check(&TokenKind::LParen) {
                 return self.parse_var_tuple_decl(is_const, var_span);
             }
-            let decl = self.parse_var_decl(is_const, var_span)?;
+            let decl = self.parse_var_decl(is_const, visibility, var_span)?;
             return Ok(Statement::Var(decl));
+        }
+
+        if is_public {
+            return Err(AlphaError::parse(
+                "Expected 'structure', 'enum', 'var', or 'const' after 'public'",
+                self.previous().span,
+            ));
         }
 
         if self.check(&TokenKind::If) {
